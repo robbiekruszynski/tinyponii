@@ -25,6 +25,27 @@ canvas { width:100%; height:100%; display:block; image-rendering:pixelated; imag
 // 1. CONSTANTS & CONFIG
 // ============================================================
 const TILE=32, W=640, H=480;
+// May's flat — floor-plan matches labelled schematic (MAY_FLAT_LAYOUT_REL)
+const MAY_FLAT_RW=320, MAY_FLAT_RH=210;
+const MAY_FLAT_RX=Math.floor((W-MAY_FLAT_RW)/2), MAY_FLAT_RY=56;
+const MAY_APT_RX=MAY_FLAT_RX, MAY_APT_RY=MAY_FLAT_RY, MAY_APT_RW=MAY_FLAT_RW, MAY_APT_RH=MAY_FLAT_RH;
+/** Bottom-left exit threshold — sprite feet in this zone step outside */
+const MAY_FLAT_DOOR_ZONE_REL={ x:14, y:MAY_FLAT_RH-30, w:54, h:28 };
+const MAY_APT_MAXPY=MAY_FLAT_RY+MAY_FLAT_RH+38;
+/** NW window — wy+wh must stay above floor (RY) so vista never bleeds onto planks */
+const MAY_FLAT_WIN_REL={ x:14, y:-28, w:68, h:24 };
+/**
+ * Furniture map — type drives sprite + interactions (id/name stable API).
+ * coords relative to room origin (RX,RY).
+ */
+const MAY_FLAT_LAYOUT_REL=[
+  { id:'couch',       type:'couch',       name:'Couch',       x:16,  y:24,  w:128, h:28 },
+  { id:'moving_boxes',type:'moving_boxes',name:'Moving boxes',x:18,  y:54,  w:54,  h:12 },
+  { id:'table_large', type:'table_large', name:'Table',       x:18,  y:70,  w:126, h:34 },
+  { id:'fridge',      type:'fridge',      name:'Fridge',      x:278, y:18,  w:36,  h:52 },
+  { id:'kitchen',     type:'kitchen',     name:'Kitchen',     x:262, y:82,  w:54,  h:116 },
+  { id:'table_small', type:'table_small', name:'Side table',  x:156, y:174, w:74,  h:26 },
+];
 const ECOLS=28, EROWS=20;   // exterior map size
 const CCOLS=20, CROWS=10;   // cave map size
 const SPEED=76;              // px/sec
@@ -37,11 +58,11 @@ const T_VOID=0,T_SIDE=1,T_GRASS=2,T_WATER=3,
       T_APT_D=8,T_HOUSE_D=9,T_CAFE_D=10,T_CAVE_E=11,
       T_ENC1=12,T_ENC2=13,T_TAXI=14,T_BLDG=19,T_MTN=20,
       T_BRIDGE=21,T_VILG=22,T_VBLDG=23,T_TREE=24,T_SHRINE=25,T_ENC_DISHES=26,
-      T_JO_HOUSE=27,T_JO_DOOR=28;
+      T_JO_HOUSE=27,T_JO_DOOR=28,T_ENC_BUS=29;
 // Cave interior tile types
 const T_CF=15,T_CENC=16,T_BOARD=17,T_CEXIT=18;
 
-const EXT_WALK  = new Set([T_SIDE,T_GRASS,T_APT_D,T_HOUSE_D,T_CAFE_D,T_CAVE_E,T_ENC1,T_ENC2,T_ENC_DISHES,T_TAXI,T_BRIDGE,T_VILG,T_JO_DOOR]);
+const EXT_WALK  = new Set([T_SIDE,T_GRASS,T_APT_D,T_HOUSE_D,T_CAFE_D,T_CAVE_E,T_ENC1,T_ENC2,T_ENC_DISHES,T_ENC_BUS,T_TAXI,T_BRIDGE,T_VILG,T_JO_DOOR]);
 const CAVE_WALK = new Set([T_CF,T_CENC,T_BOARD,T_CEXIT]);
 
 // Colour palette
@@ -93,10 +114,10 @@ const EXT_MAP = [
  [0, 4, 8, 4, 1,19,19,19,19,19,19,19,19,19, 1, 3, 3,22, 2, 2, 2, 2,22,22, 1, 2, 1, 0], // grass lane aligns with bridge-side towers
  [0, 1, 1, 1, 1,19,19,19,19,19,19,19,19,12, 1, 3, 3,22, 2,19,19, 2,22,22, 1, 2, 1, 0],
  [0,27,27,19, 1,19,19,19,19,19,19,19,19,19, 1, 3, 3,22, 2,23, 5, 5, 5,22,25, 2, 1, 0], // Jo's house (left city mid-rows)
- [0,27,27,19, 1,19,19,19,19,19,19,19,19,19, 1, 3, 3,22, 2,23, 5, 5, 5,26, 1, 2, 1, 0],
+ [0,27,27,19, 1,19,19,19,19,19,19,19,19,19, 1, 3, 3,22, 2,23, 5, 9, 5,26, 1, 2, 1, 0], // lintel above Grandma door — walkable so sprite hitbox can overlap doorway
  [0,28,27,19, 1,19,19,19,19,19,19,19,19,19, 1, 3, 3,22, 2, 2, 9, 5, 5,22, 1,24, 1, 0], // Jo door col 1
  [0, 2, 2, 2, 1,19,19,19,19,19,19,19,19,19, 1, 3, 3,22,22,22,22,22,22,22, 1, 2, 1, 0], // lane to Jo's door (was solid building)
- [0, 1, 1, 1, 1, 1, 1, 1, 1, 1,13, 1, 1, 1, 1,21,21,22,22,22,22,22,22,22,14, 2, 1, 0],
+ [0, 1,29, 1, 1, 1, 1, 1, 1, 1,13, 1, 1, 1, 1,21,21,22,22,22,22,22,22,22,14, 2, 1, 0], // row 13 EW traffic — bus stop col 2 (west of car lanes cols 4–13)
  [0,19,19,19, 1,19,19,19,19,19,19,19,19,19, 1, 3, 3,22,24,19,19, 2, 3, 3, 3, 3, 3, 0],
  [0,19,19,19, 1,19,19,19,19,19,19,19,19,19, 1, 3, 3,22, 2, 2, 2, 3, 3, 3, 3, 3, 3, 0],
  [0,19,19,19, 1,19,19,19,19,19,19,19,19,19, 1, 3, 3,22,24, 2, 2, 3, 3, 3, 3, 3, 3, 0],
@@ -153,7 +174,35 @@ const ENC_DATA = [
     "The stack leans. The bucket waits.\nSame chore. Wrong timing.",
     "\u2605 May wins! Someone else can scrub.",
   ]},
+  { name:'City Bus', sprite:'bus', kobeLead:true, lines:[
+    "SSHVVVV — air brakes. A double-decker\nfills the whole crosswalk.",
+    "The diesel note climbs. Somewhere\na driver loves that horn button.",
+    "BRMMM. HONK. Kobe goes rigid — ears flat,\nhackles up. May shortens the leash.",
+    "Between paw and tyre there's only noise\nand yellow paint. Someone has to bark back.",
+    "\u2605 Kobe wins! The bus rolls on — ears ringing.",
+  ]},
 ];
+
+function kobeHeroX(){
+  const e=ENC_DATA[G.curEnc];
+  return e&&e.kobeLead?52:22;
+}
+
+function playBusHonk(){
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return;
+    const ac=new AC();
+    const o=ac.createOscillator(), g=ac.createGain();
+    o.type='square';
+    o.frequency.setValueAtTime(280,ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(110,ac.currentTime+0.14);
+    g.gain.setValueAtTime(0.09,ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.4);
+    o.connect(g); g.connect(ac.destination);
+    o.start(); o.stop(ac.currentTime+0.42);
+  }catch(_){}
+}
 
 const BOARDING_LINES = [
   { sp:'May',  tx:'Barcelona. Gate 27.' },
@@ -179,14 +228,30 @@ const FAREWELL_LINES = [
   { sp:'Kobe',    tx:'WOOF WOOF!' },
 ];
 
-// Kerbside send-off — only after boarding pass + house farewell + visiting Grandma
+// After boarding pass: talk to Grandma indoors — Dad & DoDo gather; completes → farewellDone
+const HOUSE_BOARDING_SENDOFF_LINES = [
+  { sp:'Grandma', tx:'Mei mei — show Grandma.\nThe real ticket?' },
+  { sp:'May',     tx:'Boarding pass. Right here in my bag.' },
+  { sp:'Grandma', tx:'Ha! Then we do this properly.\nEveryone — come wish her luck!' },
+  { sp:'Father',  tx:'There she is. Barcelona-bound.' },
+  { sp:'Father',  tx:'We are so proud of you, May.\nGo show them what you\'ve got.' },
+  { sp:'DoDo',    tx:'...Socks in your carry-on.\nAnd tissues. Just in case.' },
+  { sp:'DoDo',    tx:'Good luck. Bring back photos.' },
+  { sp:'Grandma', tx:'All our love goes with you.' },
+  { sp:'May',     tx:'Thank you. For everything.' },
+  { sp:'Kobe',    tx:'WOOF WOOF!' },
+];
+
+// Kerbside — leaving home triggers this (family + cab already outside)
 const CAB_FAREWELL_LINES = [
-  { sp:'Grandma', tx:'We waited by the cab.\nOne more hug counts double.' },
-  { sp:'Father',  tx:'Passport. Phone charger. Kobe.\nYou are covered.' },
+  { sp:'Grandma', tx:'The cab\'s waited. One more hug counts double.' },
+  { sp:'Father',  tx:'Passport. Phone charger. Kobe.\nYou\'re covered.' },
   { sp:'DoDo',    tx:'...There are buns in your bag.\nEat before you sleep.' },
+  { sp:'Gary',    tx:'Whenever you\'re ready.' },
   { sp:'May',     tx:'I love you all. Really.' },
   { sp:'Kobe',    tx:'WOOF!' },
-  { sp:'',        tx:'May slips into the taxi.\nThe door shuts — soft, final.' },
+  { sp:'',        tx:'Everyone waves.\nMay opens the door — Kobe hops in first.' },
+  { sp:'',        tx:'The taxi pulls away into the dusk.' },
 ];
 
 const AIRPORT_AGENT = "Ready to fly?";
@@ -225,7 +290,7 @@ const G = {
   // Kobe exterior (absolute world pos)
   kx: 2*TILE-18, ky: 8*TILE+14,
   // Flags
-  cleared: [false,false,false,false],
+  cleared: [false,false,false,false,false],
   hasBoarding: false,
   farewellDone: false,
   cabFarewellDone: false,
@@ -263,7 +328,40 @@ const G = {
   tick: 0, aBtn: false,
   keys: {}, tdir: {x:0,y:0},
   kobeAttackPick: 0, // battle: 0 = CHOMP, 1 = MARK (pee) — same damage
+  busHonkPlayed: false,
 };
+
+function mayFlatFootBlocked(px,py){
+  if(G.indLoc!=='may_apt')return false;
+  const RX=MAY_APT_RX, RY=MAY_APT_RY;
+  for(const o of MAY_FLAT_LAYOUT_REL){
+    const ax=RX+o.x, ay=RY+o.y;
+    if(px>ax&&px<ax+o.w&&py>ay&&py<ay+o.h)return true;
+  }
+  return false;
+}
+/** Sprite-centre / point → zone hit for future SPACE/use prompts ({ id, name, … }). */
+function mayFlatFurnitureAt(px,py){
+  const RX=MAY_APT_RX, RY=MAY_APT_RY;
+  for(let i=MAY_FLAT_LAYOUT_REL.length-1;i>=0;i--){
+    const o=MAY_FLAT_LAYOUT_REL[i];
+    const ax=RX+o.x, ay=RY+o.y;
+    if(px>=ax&&px<=ax+o.w&&py>=ay&&py<=ay+o.h)return o;
+  }
+  return null;
+}
+function mayFlatAptExitTriggered(){
+  const RX=MAY_APT_RX, RY=MAY_APT_RY;
+  const dz=MAY_FLAT_DOOR_ZONE_REL;
+  const fx=G.indX+9, fy=G.indY+22;
+  return fy>=RY+dz.y+dz.h-14 && fx>=RX+dz.x&&fx<=RX+dz.x+dz.w;
+}
+function mayFlatNearDoorPrompt(){
+  const RX=MAY_APT_RX, RY=MAY_APT_RY;
+  const dz=MAY_FLAT_DOOR_ZONE_REL;
+  const fx=G.indX+9, fy=G.indY+18;
+  return fy>=RY+dz.y-28 && fx>=RX+dz.x-12 && fx<=RX+dz.x+dz.w+12;
+}
 
 // Init history
 for(let i=0;i<HIST_LEN;i++){
@@ -277,6 +375,10 @@ for(let i=0;i<HIST_LEN;i++){
 const canvas=document.getElementById('c');
 const ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
+
+/** Grandma dialogue portrait — standalone asset (`assets/grandmapreview.png`). Others: no portrait slot yet. */
+const DIALOG_GRANDMA_PORTRAIT=new Image();
+DIALOG_GRANDMA_PORTRAIT.src='assets/grandmapreview.png';
 
 window.addEventListener('keydown',e=>{
   G.keys[e.key]=true;
@@ -296,12 +398,35 @@ function extTile(col,row){
 }
 // Any foot/hit box sample overlapping a door tile (single-point checks miss the narrow house door)
 function doorTileUnderMay(){
-  const pts=[[G.mx+9,G.my+11],[G.mx+9,G.my+19],[G.mx+5,G.my+15],[G.mx+13,G.my+15],[G.mx+9,G.my+7]];
-  for(const [px,py] of pts){
-    const tt=extTile(Math.floor(px/TILE),Math.floor(py/TILE));
-    if(tt===T_HOUSE_D||tt===T_CAFE_D||tt===T_JO_DOOR)return tt;
+  const seeds=[];
+  for(const [px,py] of [[G.mx+9,G.my+8],[G.mx+9,G.my+14],[G.mx+9,G.my+22],[G.mx+9,G.my+30],[G.mx+5,G.my+18],[G.mx+13,G.my+18]]){
+    seeds.push([Math.floor(px/TILE),Math.floor(py/TILE)]);
+  }
+  const seen=new Set();
+  for(const [col,row] of seeds){
+    for(const [dc,dr] of [[0,0],[0,-1],[0,-2],[0,1],[-1,0],[1,0]]){
+      const c=col+dc,r=row+dr;
+      const key=c+','+r;
+      if(seen.has(key))continue;
+      seen.add(key);
+      const tt=extTile(c,r);
+      if(tt===T_HOUSE_D||tt===T_CAFE_D||tt===T_JO_DOOR||tt===T_APT_D)return tt;
+    }
   }
   return null;
+}
+// Known walkable tiles directly south of exterior doors (Grandma + Jo) — avoids landing on unwalkable walls / wrong overlap after interior exit
+function snapOutsideMayHouse(){
+  G.mx=20*TILE+8; G.my=13*TILE+8; G.facing='up';
+  for(let i=0;i<G.hist.length;i++) G.hist[i]={x:G.mx,y:G.my};
+}
+function snapOutsideMayApt(){
+  G.mx=2*TILE+8; G.my=8*TILE+8; G.facing='up';
+  for(let i=0;i<G.hist.length;i++) G.hist[i]={x:G.mx,y:G.my};
+}
+function snapOutsideJoHouse(){
+  G.mx=1*TILE+8; G.my=12*TILE+8; G.facing='up';
+  for(let i=0;i<G.hist.length;i++) G.hist[i]={x:G.mx,y:G.my};
 }
 function caveTile(col,row){
   if(col<0||col>=CCOLS||row<0||row>=CROWS)return T_CAVE_W;
@@ -317,10 +442,13 @@ function canStepCave(x,y){
 }
 function canStepInd(x,y){
   const house=G.indLoc==='house'||G.indLoc==='jo_house';
-  const RX=house?160:180, RY=house?80:100, RW=house?320:280;
+  const apt=G.indLoc==='may_apt';
+  const RX=apt?MAY_APT_RX:(house?160:180), RY=apt?MAY_APT_RY:(house?80:100), RW=apt?MAY_APT_RW:(house?320:280);
   const pts=[[x+2,y+2],[x+16,y+2],[x+2,y+20],[x+16,y+20]];
-  const maxPy=house?340:325;
-  return pts.every(([px,py])=>px>=RX+10&&px<=RX+RW-30&&py>=RY+20&&py<=maxPy);
+  const maxPy=apt?MAY_APT_MAXPY:(house?340:325);
+  const inBounds=([px,py])=>px>=RX+10&&px<=RX+RW-30&&py>=RY+20&&py<=maxPy;
+  if(apt)return pts.every(p=>inBounds(p)&&!mayFlatFootBlocked(p[0],p[1]));
+  return pts.every(inBounds);
 }
 
 // ============================================================
@@ -620,6 +748,42 @@ function drawDishesEncounter(ox,oy,tick=0){
   ctx.arc(bx+14, by+8, 12, Math.PI*1.08, Math.PI*1.92);
   ctx.stroke();
   ctx.lineCap='butt'; ctx.lineWidth=1;
+}
+
+// Hong Kong double-decker — loud city encounter
+function drawBusEncounter(ox,oy,tick=0){
+  const x=Math.floor(ox),y=Math.floor(oy);
+  const idle=Math.floor(tick/11)%2===0;
+  const horn=(Math.floor(tick/9)%4)<2;
+  ctx.fillStyle='rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.ellipse(x+44,y+38,46,6,0,0,Math.PI*2); ctx.fill();
+
+  r(x+4,y+14,82,26,'#e8b818');
+  r(x+6,y+16,78,11,'#282830');
+  r(x+8,y+18,18,7,'#5890c8');
+  r(x+28,y+18,18,7,'#5890c8');
+  r(x+48,y+18,18,7,'#5890c8');
+  r(x+68,y+18,10,7,'#5890c8');
+  r(x+6,y+28,78,10,'#485058');
+  r(x+10,y+30,14,6,'#384048');
+  r(x+28,y+30,14,6,'#384048');
+  r(x+46,y+30,14,6,'#384048');
+  r(x+64,y+30,14,6,'#384048');
+  r(x+82,y+28,4,10,'#343840');
+  r(x+4,y+38,88,12,'#d02828');
+  r(x+82,y+28,10,22,'#f0f0f8');
+  r(x+84,y+30,6,6,horn?'#ffffc8':'#686878');
+  r(x+84,y+38,6,6,horn?'#ffff98':'#586068');
+  r(x+76,y+42,6,5,'#181820');
+  if(idle) r(x+12,y+42,42,4,'rgba(0,0,0,0.12)');
+  const hx=x+(horn?-4:0);
+  ctx.strokeStyle=`rgba(255,248,180,${horn?0.85:0.25})`;
+  ctx.lineWidth=2;
+  for(let i=0;i<4;i++){
+    ctx.beginPath(); ctx.arc(hx+82,y+26,18+i*14,-0.35,0.35); ctx.stroke();
+  }
+  ctx.font='bold 8px monospace';ctx.fillStyle=`rgba(255,245,200,${horn?1:0.35})`;ctx.textAlign='center';
+  ctx.fillText(horn?'HONK':'···',hx+52,y+10);ctx.textAlign='left';ctx.lineWidth=1;
 }
 
 function drawNaked(ox,oy,tick=0){
@@ -1227,6 +1391,28 @@ function drawExtTile(col,row){
       break;
     }
 
+    case T_ENC_BUS: {
+      const done=G.cleared[4];
+      r(sx,sy,TILE,TILE,isHRoad?'#252320':'#4e4840');
+      if(!done){
+        const pulse=(Math.sin(tk*0.18)*0.5+0.5);
+        r(sx,sy,TILE,TILE,`rgba(255,200,40,${0.18+pulse*0.28})`);
+        ctx.save(); ctx.translate(sx-22,sy-18); ctx.scale(0.52,0.52);
+        drawBusEncounter(0,0,tk);
+        ctx.restore();
+        ctx.fillStyle='#f8e878'; ctx.font='bold 9px monospace'; ctx.textAlign='center';
+        ctx.fillText('BUS',sx+TILE/2,sy-8); ctx.textAlign='left';
+        const bob=Math.floor(Math.sin(tk*0.2)*3);
+        ctx.fillStyle='rgba(255,230,120,0.9)'; ctx.font='10px monospace'; ctx.textAlign='center';
+        ctx.fillText('\u25bc',sx+TILE/2,sy+TILE+10+bob); ctx.textAlign='left';
+      } else {
+        r(sx+8,sy+8,TILE-16,TILE-16,'rgba(80,200,120,0.15)');
+        ctx.fillStyle='rgba(120,220,140,0.65)';ctx.font='10px monospace';ctx.textAlign='center';
+        ctx.fillText('\u2713',sx+TILE/2,sy+TILE/2+4);ctx.textAlign='left';
+      }
+      break;
+    }
+
     case T_TAXI: {
       const ok=G.hasBoarding&&G.farewellDone;
       r(sx,sy,TILE,TILE,'#4e4840');
@@ -1695,7 +1881,7 @@ function drawExtMap(){
 // Animated cars — one-way loop on actual road tiles only.
 // SOUTHBOUND: col4 rows 1→18  EASTBOUND: row18 cols4→14
 // NORTHBOUND: col14 rows18→1  WESTBOUND: row1 cols14→4 (top road)
-// BONUS: row13 eastbound cols4→19
+// BONUS: row13 eastbound cols4→13 (+ westbound lower lane) — bus encounter sits col2, clear of those loops
 function drawCityOverlay(){
   const t=G.tick;
 
@@ -1991,7 +2177,6 @@ function drawCaveMap(){
   drawCaveTorch(2*TILE+10,3*TILE+off-6,0);
   drawCaveTorch(8*TILE+4,4*TILE+off-8,1.7);
   drawCaveTorch(14*TILE-6,5*TILE+off-4,0.9);
-  drawCaveTorch(11*TILE+8,6*TILE+off-10,2.4);
   drawCaveTorch(17*TILE+2,4*TILE+off-6,3.1);
 
   ctx.fillStyle='rgba(18,8,28,0.22)';
@@ -2007,7 +2192,7 @@ function drawCaveMap(){
 // ============================================================
 // INTERIOR SCENES  (house + cafe — no tile maps, just art)
 // ============================================================
-function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,fwFY,handPause,variant='may'){
+function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,fwFY,handPause,variant='may',sendoffLine=-1){
   const isJo=variant==='jo';
   const hg=ctx.createRadialGradient(W*0.48,H*0.45,70,W*0.52,H*0.58,430);
   hg.addColorStop(0,'#0a0608'); hg.addColorStop(0.5,'#161016'); hg.addColorStop(1,'#281c28');
@@ -2190,26 +2375,39 @@ function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,f
     npcLabel(cx,cy,'Charlie','#c8c8d0');
   } else {
     const gxS=RX+96, gyS=RY+136, fxS=RX+280, fyS=RY+132;
-    const grandmaWx = farewellActive ? (fwGX??gxS) :
-      RX+10+(Math.sin(tick*0.000416)*0.5+0.5)*(RW*0.45-20);
-    const grandmaWy = farewellActive ? (fwGY??gyS) :
-      RY+70+(Math.sin(tick*0.000312+1)*0.5+0.5)*(RH-110);
-    const gxD = Math.max(RX+8, Math.min(grandmaWx, RX+RW*0.5-20));
-    const gyD = Math.max(RY+60, Math.min(grandmaWy, RY+RH-50));
+    let gxD, gyD, fxD, fyD, dodX=KX+46, dodY=KY+62;
+    if(sendoffLine>=0){
+      gxD=RX+94; gyD=RY+124;
+      const dadT=Math.min(1,Math.max(0,sendoffLine-2)/3);
+      const fxa=RX+282, fya=RY+128, fxb=RX+212, fyb=RY+122;
+      fxD=fxa+(fxb-fxa)*dadT; fyD=fya+(fyb-fya)*dadT;
+      const doT=Math.min(1,Math.max(0,sendoffLine-4)/3);
+      const doxa=KX+48, doya=KY+64, doxb=RX+178, doyb=RY+116;
+      dodX=doxa+(doxb-doxa)*doT; dodY=doya+(doyb-doya)*doT;
+      fxD=Math.max(RX+RW*0.35, Math.min(fxD, RX+RW-40));
+      fyD=Math.max(RY+58, Math.min(fyD, RY+RH-48));
+    } else {
+      const grandmaWx = farewellActive ? (fwGX??gxS) :
+        RX+10+(Math.sin(tick*0.000416)*0.5+0.5)*(RW*0.45-20);
+      const grandmaWy = farewellActive ? (fwGY??gyS) :
+        RY+70+(Math.sin(tick*0.000312+1)*0.5+0.5)*(RH-110);
+      gxD = Math.max(RX+8, Math.min(grandmaWx, RX+RW*0.5-20));
+      gyD = Math.max(RY+60, Math.min(grandmaWy, RY+RH-50));
 
-    const fatherWx = farewellActive ? (fwFX??fxS) :
-      RX+RW*0.4+(Math.sin(tick*0.008+2)*0.5+0.5)*(RW*0.45-20);
-    const fatherWy = farewellActive ? (fwFY??fyS) :
-      RY+65+(Math.sin(tick*0.007+3)*0.5+0.5)*(RH-110);
-    const fxD = Math.max(RX+RW*0.35, Math.min(fatherWx, RX+RW-40));
-    const fyD = Math.max(RY+60, Math.min(fatherWy, RY+RH-50));
+      const fatherWx = farewellActive ? (fwFX??fxS) :
+        RX+RW*0.4+(Math.sin(tick*0.008+2)*0.5+0.5)*(RW*0.45-20);
+      const fatherWy = farewellActive ? (fwFY??fyS) :
+        RY+65+(Math.sin(tick*0.007+3)*0.5+0.5)*(RH-110);
+      fxD = Math.max(RX+RW*0.35, Math.min(fatherWx, RX+RW-40));
+      fyD = Math.max(RY+60, Math.min(fatherWy, RY+RH-50));
+    }
 
     drawRadiator(gxD-18,gyD+4);
     ctx.save(); ctx.translate(gxD,gyD); ctx.scale(1.12,1.12); drawGrandma(0,0); ctx.restore();
     ctx.save(); ctx.translate(fxD,fyD); ctx.scale(1.12,1.12); drawFather(0,0); ctx.restore();
-    ctx.save(); ctx.translate(KX+46,KY+62); ctx.scale(1.12,1.12); drawWomanKitchen(0,0,handPause); ctx.restore();
+    ctx.save(); ctx.translate(dodX,dodY); ctx.scale(1.12,1.12); drawWomanKitchen(0,0,handPause); ctx.restore();
 
-    npcLabel(KX+46,KY+62,'DoDo','#f0d898');
+    npcLabel(dodX,dodY,'DoDo','#f0d898');
     npcLabel(gxD,gyD,'Grandma','#f8e8c8');
     npcLabel(fxD,fyD,'Father','#c8e0f8');
   }
@@ -2251,7 +2449,208 @@ function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,f
   hb.addColorStop(1,'rgba(28,20,26,0.75)');
   ctx.fillStyle=hb; ctx.fillRect(0,RY+RH+8,W,H-(RY+RH+8));
   ctx.fillStyle='rgba(180,160,120,0.6)';ctx.font='10px monospace';ctx.textAlign='center';
-  ctx.fillText('ENTER: talk   ↓ walk south to exit',W/2,RY+RH+38);ctx.textAlign='left';
+  const hprompt=!isJo&&G.hasBoarding&&!G.farewellDone
+    ? 'Stand near Grandma — SPACE to talk    ↓ south: exit'
+    : 'ENTER: talk   ↓ walk south to exit';
+  ctx.fillText(hprompt,W/2,RY+RH+38);ctx.textAlign='left';
+}
+
+// Bright clear-day vista for May's flat window — no rain
+function drawMayAptWindowView(t){
+  const ph=Math.sin(t*0.0007)*0.5+0.5;
+  const skyH=Math.floor(H*0.72);
+  const sk=ctx.createLinearGradient(0,0,0,skyH);
+  sk.addColorStop(0,`rgb(${218+Math.floor(ph*28)},${238+Math.floor(ph*14)},255)`);
+  sk.addColorStop(0.38,`rgb(${255},${228+Math.floor(ph*18)},${178+Math.floor(ph*12)})`);
+  sk.addColorStop(0.72,`rgb(${255},${194+Math.floor(ph*14)},${132+Math.floor(ph*10)})`);
+  sk.addColorStop(1,`rgb(${248},${168+Math.floor(ph*12)},${108})`);
+  ctx.fillStyle='#f4fbff';
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle=sk;
+  ctx.fillRect(0,0,W,skyH);
+
+  const sunX=W*0.74, sunY=H*0.06;
+  const outer=ctx.createRadialGradient(sunX,sunY,24,sunX,sunY,240);
+  outer.addColorStop(0,'rgba(255,254,248,0.98)');
+  outer.addColorStop(0.2,'rgba(255,240,170,0.62)');
+  outer.addColorStop(0.48,'rgba(255,210,120,0.28)');
+  outer.addColorStop(1,'rgba(255,175,90,0)');
+  ctx.fillStyle=outer;
+  ctx.beginPath(); ctx.arc(sunX,sunY,240,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#fffef8';
+  ctx.beginPath(); ctx.arc(sunX,sunY,30,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,252,215,0.95)';
+  ctx.beginPath(); ctx.arc(sunX,sunY,17,0,Math.PI*2); ctx.fill();
+
+  const drift=Math.sin(t*0.018)*14;
+  ctx.globalAlpha=0.96;
+  ctx.fillStyle='rgba(255,255,255,0.98)';
+  ctx.beginPath(); ctx.ellipse(120+drift,skyH*0.2,56,20,0.08,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(158+drift,skyH*0.23,42,15,-0.05,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,254,252,0.92)';
+  ctx.beginPath(); ctx.ellipse(W-140-drift*0.7,skyH*0.17,52,17,-0.12,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(W-108-drift*0.7,skyH*0.19,36,13,0.1,0,Math.PI*2); ctx.fill();
+  ctx.globalAlpha=1;
+
+  const hz=Math.floor(H*0.44);
+  const sea=ctx.createLinearGradient(0,hz,0,H);
+  sea.addColorStop(0,'rgba(140,190,230,0.62)');
+  sea.addColorStop(0.4,'rgba(105,155,205,0.7)');
+  sea.addColorStop(1,'rgba(75,118,168,0.78)');
+  ctx.fillStyle=sea;
+  ctx.fillRect(0,hz,W,H-hz);
+
+  const bob=Math.sin(t*0.012)*3;
+  r(20+bob,hz-54,44,54,'rgba(95,115,138,0.82)');
+  r(72+bob,hz-78,38,78,'rgba(85,105,128,0.85)');
+  r(118+bob,hz-62,52,62,'rgba(100,118,138,0.82)');
+  r(178+bob,hz-92,46,92,'rgba(78,95,118,0.88)');
+  r(232+bob,hz-48,36,48,'rgba(98,115,135,0.8)');
+  r(278+bob,hz-70,42,70,'rgba(85,102,125,0.85)');
+  r(W-220+bob,hz-84,50,84,'rgba(88,105,125,0.86)');
+  r(W-162+bob,hz-58,40,58,'rgba(102,118,138,0.82)');
+  r(W-114+bob,hz-96,48,96,'rgba(72,92,118,0.9)');
+  r(W-62+bob,hz-52,58,52,'rgba(108,122,142,0.8)');
+
+  ctx.globalCompositeOperation='screen';
+  ctx.fillStyle='rgba(255,255,255,0.07)';
+  ctx.fillRect(0,0,W,H);
+  ctx.globalCompositeOperation='source-over';
+}
+
+// Single window paint — May flat intro + re-entry use identical vista code path
+function renderMayFlatWindow(RX,RY,RW,RH,tick){
+  const wx=RX+MAY_FLAT_WIN_REL.x, wy=RY+MAY_FLAT_WIN_REL.y, ww=MAY_FLAT_WIN_REL.w, wh=MAY_FLAT_WIN_REL.h;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(wx,wy,ww,wh); ctx.clip();
+  ctx.translate(wx,wy); ctx.scale(ww/W,wh/H);
+  drawMayAptWindowView(tick);
+  ctx.restore();
+  r(wx,wy,ww,wh,'rgba(255,252,248,0.02)');
+  ctx.strokeStyle='#e4e0d8'; ctx.lineWidth=3; ctx.strokeRect(wx,wy,ww,wh);
+}
+
+// Top-down furniture sprites — type matches MAY_FLAT_LAYOUT_REL[].type (interaction API)
+function drawMayFlatFurniturePiece(ax,ay,o){
+  const w=o.w, h=o.h;
+  if(o.type==='couch'){
+    r(ax,ay-3,w,7,'#323040');
+    r(ax+4,ay+4,w-8,h-8,'#606878');
+    r(ax,ay,7,h,'#484858'); r(ax+w-7,ay,7,h,'#484858');
+    r(ax+10,ay+6,w-20,h-12,'#788098');
+    r(ax+7,ay-2,w-14,6,'#404050');
+  } else if(o.type==='fridge'){
+    r(ax,ay,w,h,'#eaeef4');
+    r(ax+5,ay+8,3,h-22,'rgba(0,0,0,0.07)');
+    r(ax+12,ay+h-16,7,3,'#8890a0'); r(ax+22,ay+h-16,7,3,'#8890a0');
+    r(ax+8,ay+14,w-16,4,'rgba(200,210,230,0.5)');
+  } else if(o.type==='table_large'||o.type==='table_small'){
+    ctx.fillStyle=o.type==='table_large'?'rgba(238,230,220,0.4)':'rgba(232,224,216,0.35)';
+    ctx.fillRect(ax-6,ay-4,w+12,h+10);
+    ctx.strokeStyle='rgba(120,100,90,0.25)'; ctx.strokeRect(ax-6,ay-4,w+12,h+10);
+    r(ax-2,ay-2,w+4,h+4,'#5c4434');
+    r(ax,ay,w,h,o.type==='table_large'?'#a87858':'#986848');
+    ctx.strokeStyle='rgba(255,255,255,0.14)'; ctx.strokeRect(ax+3,ay+3,w-6,h-6);
+    const lw=o.type==='table_large'?8:7;
+    r(ax+10,ay+h,lw,7,'#382820'); r(ax+w-lw-10,ay+h,lw,7,'#382820');
+  } else if(o.type==='kitchen'){
+    r(ax,ay,w,h,'#5a5048');
+    const ct=14;
+    r(ax,ay,w,ct,'#454340');
+    r(ax+2,ay-7,w-4,7,'#706058');
+    r(ax+8,ay+4,24,8,'#4880a8');
+    r(ax+36,ay+4,30,8,'#282828');
+    r(ax+42,ay+6,8,6,'#181818'); r(ax+54,ay+6,8,6,'#181818');
+    r(ax+48,ay+10,4,2,'#e02828');
+    r(ax+6,ay+ct,w-12,h-ct-12,'#6e4838');
+    r(ax+10,ay+ct+12,24,12,'#563428'); r(ax+38,ay+ct+12,28,12,'#563428');
+    r(ax+4,ay+h-14,w-8,10,'#483828');
+    ctx.strokeStyle='rgba(0,0,0,0.12)'; ctx.strokeRect(ax+0.5,ay+0.5,w-1,h-1);
+  } else if(o.type==='moving_boxes'){
+    r(ax,ay,w,h,'#c8a468');
+    r(ax+2,ay+2,w-4,3,'#d8bc78');
+    r(ax+3,ay+h-5,w-6,2,'#9a7848');
+    r(ax+6,ay+5,Math.floor(w*0.42),h-10,'#b89858');
+    r(ax+Math.floor(w*0.48),ay+4,3,h-7,'#8a7040');
+    ctx.strokeStyle='rgba(60,44,28,0.35)'; ctx.strokeRect(ax+0.5,ay+0.5,w-1,h-1);
+  }
+}
+
+// Shared May flat — schematic layout + bottom-left door
+function drawMayFlatRoom(RX,RY,RW,RH,tick,opts){
+  opts=opts||{};
+  const skipWindow=!!opts.skipWindow;
+
+  const hg=ctx.createRadialGradient(W*0.5,H*0.46,80,W*0.52,H*0.58,420);
+  hg.addColorStop(0,'#151210'); hg.addColorStop(1,'#2a2420');
+  ctx.fillStyle=hg; ctx.fillRect(0,0,W,H);
+
+  const floor='#d4b896', grain='rgba(92,72,48,0.18)';
+  r(RX,RY,RW,RH,floor);
+  for(let py=RY+16;py<RY+RH;py+=28) r(RX,py,RW,1,grain);
+  for(let px=RX+20;px<RX+RW;px+=48) r(px,RY,1,RH,grain);
+
+  const dz0=MAY_FLAT_DOOR_ZONE_REL;
+  const base='#a88262';
+  r(RX,RY+RH-6,dz0.x,6,base);
+  r(RX+dz0.x+dz0.w,RY+RH-6,RW-dz0.x-dz0.w,6,base);
+
+  r(RX-14,RY-28,16,RH+36,'#f2f2f0');
+  r(RX+RW-2,RY-28,16,RH+36,'#f2f2f0');
+  r(RX-14,RY-30,RW+28,26,'#fafafa');
+  ctx.strokeStyle='rgba(0,0,0,0.06)'; ctx.lineWidth=1;
+  ctx.strokeRect(RX-13,RY-29,RW+26,24);
+  r(RX-14,RY-34,RW+28,6,'#ececec');
+
+  if(!skipWindow) renderMayFlatWindow(RX,RY,RW,RH,tick);
+
+  (function(){
+    const px=RX+MAY_FLAT_WIN_REL.x+MAY_FLAT_WIN_REL.w+8, py=RY-26, pw=44, ph=34;
+    r(px-3,py-3,pw+6,ph+6,'#453c36');
+    r(px-1,py-1,pw+2,ph+2,'#ddd8d0');
+    r(px,py,pw,ph,'#faf8f4');
+    ctx.fillStyle='#2a2830'; ctx.font='bold 8px monospace'; ctx.textAlign='center';
+    ctx.fillText('MAY', px+pw/2, py+10);
+    ctx.textAlign='left';
+    const gx0=px+5, gy0=py+14, cellW=(pw-10)/7, cellH=(ph-16)/5;
+    ctx.strokeStyle='rgba(55,55,68,0.28)'; ctx.lineWidth=1;
+    for(let row=0;row<5;row++) for(let col=0;col<7;col++){
+      ctx.strokeRect(gx0+col*cellW+0.5, gy0+row*cellH+0.5, cellW-1, cellH-1);
+    }
+    ctx.strokeStyle='#c03038'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(px+pw-13, py+ph-10, 5.2, 0, Math.PI*2); ctx.stroke();
+  })();
+
+  for(const o of MAY_FLAT_LAYOUT_REL){
+    drawMayFlatFurniturePiece(RX+o.x,RY+o.y,o);
+  }
+
+  const dz=MAY_FLAT_DOOR_ZONE_REL;
+  const ddx=RX+dz.x, ddy=RY+RH-10;
+  r(ddx,ddy,dz.w,10,'#4a3038');
+  r(ddx+3,ddy+10,dz.w-6,4,'#f0c8d8');
+  ctx.strokeStyle='rgba(30,18,24,0.5)'; ctx.lineWidth=1;
+  ctx.strokeRect(ddx+0.5,ddy+0.5,dz.w-1,9);
+}
+
+// May's starter flat — re-enter via T_APT_D; room matches intro
+function drawMayAptInterior(indX,indY,tick){
+  const RX=MAY_APT_RX, RY=MAY_APT_RY, RW=MAY_APT_RW, RH=MAY_APT_RH;
+  drawMayFlatRoom(RX,RY,RW,RH,tick);
+
+  const mix=Math.min(Math.max(indX,RX+16),RX+RW-48);
+  const miy=Math.min(Math.max(indY,RY+22),RY+RH-30);
+  drawMay(mix,miy,tick,G.facing||'down');
+  drawKobe(mix-26,miy+4,tick,G.facing);
+  npcNameTag(mix+2,miy,'May','#f8e8d8');
+  npcNameTag(mix-24,miy+4,'Kobe','#d8c8a0');
+
+  const hb=ctx.createLinearGradient(0,RY+RH+8,0,H);
+  hb.addColorStop(0,'rgba(18,14,12,0.78)');
+  hb.addColorStop(1,'rgba(28,24,22,0.9)');
+  ctx.fillStyle=hb; ctx.fillRect(0,RY+RH+4,W,H-(RY+RH+4));
+  ctx.fillStyle='rgba(180,160,120,0.75)';ctx.font='10px monospace';ctx.textAlign='center';
+  ctx.fillText('SPACE: look around    \u2199 exit: bottom-left door',W/2,H-26);ctx.textAlign='left';
 }
 
 function drawCafeInterior(indX,indY,tick){
@@ -2417,28 +2816,50 @@ function drawHUD(){
     ctx.fillText('Boarding pass: \u2713',8,45);
   }
   if(G.hasBoarding&&G.farewellDone){
-    r(0,50,240,20,'rgba(0,0,0,0.6)');
+    r(0,50,260,20,'rgba(0,0,0,0.6)');
     ctx.fillStyle=C.encG;ctx.font='12px monospace';
-    ctx.fillText(G.cabFarewellDone?'Find the TAXI! \u2192':'Head to taxi — everyone waits \u2192',8,65);
+    ctx.fillText(G.cabFarewellDone?'Taxi \u2192 airport':'Walk south out \u2192 cab send-off',8,65);
   }
+}
+
+function normalizeDialogSpeaker(sp){
+  return String(sp||'').replace(/^\u2605\s*/,'').trim();
 }
 
 function drawDialog(lines,speaker=''){
   const bx=6,by=H-128,bw=W-12,bh=122;
+  const norm=normalizeDialogSpeaker(speaker);
+  const grandmaPortrait=norm.toLowerCase()==='grandma';
+  const PW=96, PH=96;
+
   r(bx-3,by-3,bw+6,bh+6,C.uiB);
   r(bx,by,bw,bh,C.uiBg);
   ctx.strokeStyle=C.uiB2;ctx.lineWidth=2;ctx.strokeRect(bx+5,by+5,bw-10,bh-10);
   ctx.strokeStyle=C.uiB;ctx.lineWidth=1;ctx.strokeRect(bx+7,by+7,bw-14,bh-14);
+
+  let textLeft=bx+16;
+  if(grandmaPortrait){
+    const px=bx+12, py=by+bh-PH-12;
+    const img=DIALOG_GRANDMA_PORTRAIT;
+    if(img.complete && img.naturalWidth>0){
+      ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight, px, py, PW, PH);
+    }
+    ctx.strokeStyle=C.uiB2;ctx.lineWidth=2;ctx.strokeRect(px+1,py+1,PW-2,PH-2);
+    ctx.strokeStyle=C.uiB;ctx.lineWidth=1;ctx.strokeRect(px+3,py+3,PW-6,PH-6);
+    textLeft=Math.min(px+PW+18, bx+bw-56);
+  }
+
   if(speaker){
-    const sw=Math.min(speaker.length*9+18,200);
+    const labelSpeaker=String(speaker).trim();
+    const sw=Math.min(labelSpeaker.length*9+18,200);
     r(bx,by-24,sw+4,24,C.uiB); r(bx+2,by-22,sw,20,C.uiBg);
     ctx.fillStyle=C.white;ctx.font='bold 12px monospace';
-    ctx.fillText(speaker,bx+9,by-8);
+    ctx.fillText(labelSpeaker,bx+9,by-8);
   }
   ctx.fillStyle=C.white;ctx.font='14px monospace';
   let ly=by+28;
   for(const ln of lines){
-    for(const sub of ln.split('\n')){ctx.fillText(sub,bx+16,ly);ly+=21;}
+    for(const sub of ln.split('\n')){ctx.fillText(sub,textLeft,ly);ly+=21;}
   }
   if(Math.floor(Date.now()/480)%2===0){
     ctx.fillStyle=C.uiB;ctx.fillText('\u25bc',bx+bw-24,by+bh-10);
@@ -2555,6 +2976,7 @@ function drawBattle(){
   const fr=G.tick;
   const attacksDone=G.kobeAttacks||0;
   const kobePhase=G.kobePhase||0;
+  const kLead=enc.kobeLead===true;
 
   if(enc.sprite==='naked'){
     drawBattleRainBackdrop(fr);
@@ -2563,44 +2985,80 @@ function drawBattle(){
     r(0,0,W,H,'#141c2c');
     for(let i=1;i<=8;i++)r(0,H-134-i*26,W,2,`rgba(60,80,120,${0.12+i*0.05})`);
   }
+  if(enc.sprite==='bus'){
+    const pulse=(Math.sin(fr*0.42)+1)*0.5;
+    ctx.strokeStyle=`rgba(255,235,140,${0.12+pulse*0.35})`;
+    ctx.lineWidth=2;
+    for(let i=0;i<5;i++){
+      ctx.beginPath(); ctx.arc(W-108,H-268,28+i*22+pulse*14,-0.55,0.55); ctx.stroke();
+    }
+    ctx.font=`bold ${14+Math.floor(pulse*10)}px monospace`;
+    ctx.fillStyle=`rgba(255,215,90,${0.55+pulse*0.45})`;
+    ctx.textAlign='center';
+    ctx.fillText(['BRMMM','HONK','SSHHHK'][Math.floor(fr/16)%3],W-168,H-318);
+    ctx.textAlign='left'; ctx.lineWidth=1;
+  }
+
   r(W-260,H-180,230,12,'#202840');r(W-258,H-192,226,4,'#303858');
   r(10,H-140,200,12,'#202840');r(12,H-152,196,4,'#303858');
 
-  // Enemy — shake on bite
   const hitShake=(kobePhase===2)?Math.floor(Math.sin(fr*1.2)*4):0;
   ctx.save();ctx.translate(W-210+hitShake,H-330);ctx.scale(2.4,2.4);
   if(enc.sprite==='agent')drawAgent(0,0);
   else if(enc.sprite==='invoice')drawInvoice(0,0,fr);
   else if(enc.sprite==='dishes')drawDishesEncounter(0,0,fr);
+  else if(enc.sprite==='bus')drawBusEncounter(0,0,fr);
   else drawNaked(0,0,fr);
   ctx.restore();
 
-  // May
-  ctx.save();ctx.translate(60,H-230);ctx.scale(2,2);drawMay(0,0,fr,'down');ctx.restore();
+  const homeX=kLead?52:22;
 
-  // Kobe — idle beside May or charging
-  if(kobePhase===0||kobePhase===3){
-    ctx.save();ctx.translate(22,H-176);ctx.scale(1.6,1.6);drawKobe(0,0,fr);ctx.restore();
+  if(kLead){
+    ctx.save();ctx.translate(4,H-208);ctx.scale(1.15,1.15);drawMay(0,0,fr,'right');ctx.restore();
+    if(kobePhase===0||kobePhase===3){
+      ctx.save();ctx.translate(homeX,H-236);ctx.scale(2.05,2.05);drawKobe(0,0,fr);ctx.restore();
+    } else {
+      const kbx=G.kobeBattleX||homeX;
+      ctx.save();ctx.translate(kbx,H-236);ctx.scale(2.05,2.05);drawKobe(0,0,fr);ctx.restore();
+      if(kobePhase===1) drawWoof(kbx+14,H-252);
+      if(kobePhase===2){
+        if(G.kobeAttackPick===1){
+          drawBattlePeeSplash(fr);
+          ctx.fillStyle='rgba(232,200,40,0.42)';
+          ctx.fillRect(W-278,H-268,135,36);
+          ctx.fillStyle='#b89810';ctx.font='bold 18px monospace';ctx.textAlign='center';
+          ctx.fillText('MARK!',W-208,H-246);ctx.textAlign='left';
+        } else {
+          r(W-235,H-285,55,32,'rgba(255,220,80,0.5)');
+          ctx.fillStyle='#f0e840';ctx.font='bold 18px monospace';ctx.textAlign='center';
+          ctx.fillText('CHOMP!',W-208,H-263);ctx.textAlign='left';
+        }
+      }
+    }
   } else {
-    const kbx=G.kobeBattleX||22;
-    ctx.save();ctx.translate(kbx,H-176);ctx.scale(1.6,1.6);drawKobe(0,0,fr);ctx.restore();
-    if(kobePhase===1) drawWoof(kbx+10,H-190);
-    if(kobePhase===2){
-      if(G.kobeAttackPick===1){
-        drawBattlePeeSplash(fr);
-        ctx.fillStyle='rgba(232,200,40,0.42)';
-        ctx.fillRect(W-278,H-268,135,36);
-        ctx.fillStyle='#b89810';ctx.font='bold 18px monospace';ctx.textAlign='center';
-        ctx.fillText('MARK!',W-208,H-246);ctx.textAlign='left';
-      } else {
-        r(W-235,H-285,55,32,'rgba(255,220,80,0.5)');
-        ctx.fillStyle='#f0e840';ctx.font='bold 18px monospace';ctx.textAlign='center';
-        ctx.fillText('CHOMP!',W-208,H-263);ctx.textAlign='left';
+    ctx.save();ctx.translate(60,H-230);ctx.scale(2,2);drawMay(0,0,fr,'down');ctx.restore();
+    if(kobePhase===0||kobePhase===3){
+      ctx.save();ctx.translate(22,H-176);ctx.scale(1.6,1.6);drawKobe(0,0,fr);ctx.restore();
+    } else {
+      const kbx=G.kobeBattleX||22;
+      ctx.save();ctx.translate(kbx,H-176);ctx.scale(1.6,1.6);drawKobe(0,0,fr);ctx.restore();
+      if(kobePhase===1) drawWoof(kbx+10,H-190);
+      if(kobePhase===2){
+        if(G.kobeAttackPick===1){
+          drawBattlePeeSplash(fr);
+          ctx.fillStyle='rgba(232,200,40,0.42)';
+          ctx.fillRect(W-278,H-268,135,36);
+          ctx.fillStyle='#b89810';ctx.font='bold 18px monospace';ctx.textAlign='center';
+          ctx.fillText('MARK!',W-208,H-246);ctx.textAlign='left';
+        } else {
+          r(W-235,H-285,55,32,'rgba(255,220,80,0.5)');
+          ctx.fillStyle='#f0e840';ctx.font='bold 18px monospace';ctx.textAlign='center';
+          ctx.fillText('CHOMP!',W-208,H-263);ctx.textAlign='left';
+        }
       }
     }
   }
 
-  // Enemy HP
   const ibx=W-244,iby=14;
   r(ibx-3,iby-3,234,62,C.uiB);r(ibx,iby,228,56,C.uiBg);
   ctx.fillStyle=C.white;ctx.font='bold 13px monospace';ctx.fillText(enc.name,ibx+8,iby+20);
@@ -2609,19 +3067,22 @@ function drawBattle(){
   r(ibx+8,iby+32,Math.round(188*hp),10,hp>0.5?C.green:hp>0.25?C.orange:C.red);
   ctx.fillStyle='#888';ctx.font='10px monospace';ctx.fillText('HP',ibx+200,iby+41);
 
-  // May bar with real HP
   const mbx=12,mby=H-172;
   r(mbx-3,mby-3,188,56,C.uiB);r(mbx,mby,182,50,C.uiBg);
-  ctx.fillStyle=C.white;ctx.font='bold 13px monospace';ctx.fillText('MAY',mbx+8,mby+18);
-  ctx.fillStyle='#c49a5a';ctx.font='11px monospace';ctx.fillText('+ KOBE',mbx+8,mby+30);
-  // HP pip bar
+  ctx.fillStyle=C.white;ctx.font='bold 13px monospace';
+  if(kLead){
+    ctx.fillText('KOBE',mbx+8,mby+18);
+    ctx.fillStyle='#b8a898';ctx.font='11px monospace';ctx.fillText('May holds the leash',mbx+8,mby+30);
+  } else {
+    ctx.fillText('MAY',mbx+8,mby+18);
+    ctx.fillStyle='#c49a5a';ctx.font='11px monospace';ctx.fillText('+ KOBE',mbx+8,mby+30);
+  }
   const mayHP=G.mayHP||G.mayMaxHP||5;
   const maxHP=G.mayMaxHP||5;
   r(mbx+8,mby+38,162,8,'#2a2a3a');
   r(mbx+8,mby+38,Math.round(162*mayHP/maxHP),8,mayHP>2?'#3aaa3a':'#cc3030');
   ctx.fillStyle='#888';ctx.font='9px monospace';ctx.fillText(`HP ${mayHP}/${maxHP}`,mbx+8,mby+58);
 
-  // Enemy attack message overlay
   if(G.battlePhase==='enemyrecoil'&&G.enemyAttackMsg){
     const [title,desc]=G.enemyAttackMsg;
     r(W/2-140,H/2-36,280,72,'rgba(0,0,0,0.88)');
@@ -2632,25 +3093,27 @@ function drawBattle(){
     const lines2=desc.split('\n');
     lines2.forEach((l,i)=>ctx.fillText(l,W/2,H/2+8+i*14));
     ctx.textAlign='left';
-    // Shake May sprite when hit
     const shake=Math.floor(Math.sin(G.battleTimer*20)*3);
     ctx.save();ctx.translate(shake,0);
-    ctx.save();ctx.translate(60+shake,H-230);ctx.scale(2,2);drawMay(0,0,G.tick,'down');ctx.restore();
+    if(kLead){
+      ctx.save();ctx.translate(homeX+shake,H-236);ctx.scale(2.05,2.05);drawKobe(0,0,G.tick);ctx.restore();
+    } else {
+      ctx.save();ctx.translate(60+shake,H-230);ctx.scale(2,2);drawMay(0,0,G.tick,'down');ctx.restore();
+    }
     ctx.restore();
   }
 
-  // Dialogue or menus
   const bp=G.battlePhase;
   if(bp==='dialogue'){
     const line=enc.lines[Math.min(G.dline,enc.lines.length-2)];
     drawDialog([line],enc.name);
   } else if(bp==='attack'){
-    drawDialog(['What will you do?'],'May');
+    drawDialog([kLead?'What will Kobe do?':'What will you do?'],'May');
     drawBattleAttackMenu();
   } else if(bp==='koberun'||bp==='kobebite'){
     drawDialog([(G.kobeAttackPick===1?'MARK YOUR SPOT!':'GET THEM KOBE!')],'May');
   } else if(bp==='kobereturn'){
-    drawDialog([attacksDone>=1?'That did it!':'Again!'],'May');
+    drawDialog([attacksDone>=1?(kLead?'Absolute legend.':'That did it!'):(kLead?'Again, Kobe!':'Again!')],'May');
   } else if(bp==='result'){
     drawDialog([enc.lines[enc.lines.length-1]],'\u2605 RESULT');
   }
@@ -2660,48 +3123,22 @@ function drawBattle(){
 // 9. CUTSCENE & ENDING DRAWINGS
 // ============================================================
 
-// INTRO: bedroom scene — window shows same dusk + rain vista as naked-man battle
+// INTRO: same May flat as apartment (white studio)
 function drawIntroBedroom(){
-  // Floor (wood planks)
-  r(0,0,W,H,'#8a6030');
-  for(let i=0;i<12;i++){r(0,i*42,W,40,'#9a6838');r(0,i*42,W,2,'#7a5020');}
-  // Walls
-  r(0,0,W,120,'#d4cec4');
-  r(0,112,W,8,'#a09890');
-  const wx=40,wy=16,ww=150,wh=88;
-  ctx.save();
-  ctx.beginPath();ctx.rect(wx,wy,ww,wh);ctx.clip();
-  ctx.translate(wx,wy);ctx.scale(ww/W,wh/H);
-  drawBattleRainBackdrop(G.tick);
-  ctx.restore();
-  // Slight glass reflection / dusk tint on pane
-  r(wx,wy,ww,wh,'rgba(220,215,200,0.08)');
-  ctx.strokeStyle='#c0b090';ctx.lineWidth=4;ctx.strokeRect(wx,wy,ww,wh);
-  r(wx+ww/2-2,wy,4,wh,'#c0b090'); r(wx,wy+wh/2-2,ww,4,'#c0b090');
-  // Bed (right side)
-  r(460,100,160,140,'#8a6040');
-  r(455,105,170,30,'#f0e8d8'); // pillow
-  r(460,130,160,110,'#c08060');
-  // Suitcase (center, open)
-  r(220,180,120,90,'#2a4868');
-  r(220,180,120,8,'#1a3858'); // top edge
-  r(222,190,116,76,'#1a3058'); // interior
-  r(232,200,96,58,'#c8d8e8'); // lining
-  r(258,194,4,12,'#d0c000'); // latches
-  r(298,194,4,12,'#d0c000');
-  // Boxes
-  r(60,200,80,70,'#c8a050'); r(62,202,76,16,'#d0b060'); r(70,196,20,8,'#8a6030');
-  r(150,220,70,60,'#c8a050'); r(152,222,66,14,'#d0b060');
-  r(110,260,90,60,'#d0a840');
-  // Duffel bag
-  r(400,280,100,50,'#3a3a3a'); r(402,282,96,20,'#4a4a4a');
-  // May and Kobe in room
-  ctx.save();ctx.translate(280,240);ctx.scale(2,2);drawMay(0,0,G.tick,'down');ctx.restore();
-  ctx.save();ctx.translate(232,272);ctx.scale(1.5,1.5);drawKobe(0,0,G.tick);ctx.restore();
-  // Dialogue
+  const RX=MAY_FLAT_RX, RY=MAY_FLAT_RY, RW=MAY_FLAT_RW, RH=MAY_FLAT_RH;
+  drawMayFlatRoom(RX,RY,RW,RH,G.tick,{skipWindow:true});
+
+  const mx=RX+208, my=RY+94;
+  const kx=RX+168, ky=RY+98;
+  ctx.save();ctx.translate(mx,my);ctx.scale(2,2);drawMay(0,0,G.tick,'down');ctx.restore();
+  ctx.save();ctx.translate(kx,ky);ctx.scale(1.5,1.5);drawKobe(0,0,G.tick);ctx.restore();
+
+  // Same vista layer as apartment re-entry — painted last so nothing dims the pane in intro
+  renderMayFlatWindow(RX,RY,RW,RH,G.tick);
+
   const il=INTRO_LINES[Math.min(G.introLine,INTRO_LINES.length-1)];
   const showWoof=G.introLine===3;
-  if(showWoof) drawWoof(232+6,272);
+  if(showWoof) drawWoof(kx+6,ky);
   drawDialog([il.tx],il.sp||'May');
 }
 
@@ -2743,7 +3180,7 @@ function drawCabFarewellScene(){
   G.camX=ox; G.camY=oy;
 
   const cl=CAB_FAREWELL_LINES[Math.min(G.cabFwLine,CAB_FAREWELL_LINES.length-1)];
-  if(G.cabFwLine===4) drawWoof(msx,msy-10);
+  if(G.cabFwLine===5) drawWoof(msx,msy-10);
   drawDialog([cl.tx],cl.sp||'');
 }
 
@@ -2890,10 +3327,6 @@ function drawTakeoff(){
       ctx.strokeStyle='#120c08';ctx.lineWidth=4;
       ctx.strokeText('Barcelona bound. \uD83D\uDC3E',W/2,H/2+4);
       ctx.fillText('Barcelona bound. \uD83D\uDC3E',W/2,H/2+4);
-      ctx.font='bold 13px monospace';ctx.fillStyle='rgba(255,248,235,0.95)';
-      ctx.lineWidth=3;
-      ctx.strokeText('Gary \u00b7 Charlie \u00b7 Jo \u00b7 Sadonna \u00b7 Wing',W/2,H/2+34);
-      ctx.fillText('Gary \u00b7 Charlie \u00b7 Jo \u00b7 Sadonna \u00b7 Wing',W/2,H/2+34);
       ctx.restore();
     }
     if(t>3){
@@ -3057,9 +3490,10 @@ function moveInd(dx,dy,dt){
   if(canStepInd(nx,G.indY))G.indX=nx;
   if(canStepInd(G.indX,ny))G.indY=ny;
   const house=G.indLoc==='house'||G.indLoc==='jo_house';
-  const RX=house?160:180, RY=house?80:100, RW=house?320:280;
+  const apt=G.indLoc==='may_apt';
+  const RX=apt?MAY_APT_RX:(house?160:180), RY=apt?MAY_APT_RY:(house?80:100), RW=apt?MAY_APT_RW:(house?320:280);
   G.indX=Math.max(RX+8,Math.min(G.indX,RX+RW-46));
-  G.indY=Math.max(RY+18,Math.min(G.indY,house?325:305));
+  G.indY=Math.max(RY+18,Math.min(G.indY,apt?MAY_APT_MAXPY:(house?325:305)));
   if(Math.abs(dx)>Math.abs(dy)){
     G.facing=dx>0?'right':'left';
   } else {
@@ -3068,6 +3502,17 @@ function moveInd(dx,dy,dt){
 }
 
 function checkExtSpecial(aPressed){
+  // Doors first — feet can overlap T_HOUSE_D while centre tile is grass/path; encounters/taxi used centre-only and blocked re-entry
+  const dtDoor=doorTileUnderMay();
+  if(dtDoor===T_HOUSE_D||dtDoor===T_CAFE_D||dtDoor===T_JO_DOOR||dtDoor===T_APT_D){
+    if(aPressed){
+      if(dtDoor===T_HOUSE_D)return{type:'indoor',loc:'house'};
+      if(dtDoor===T_JO_DOOR)return{type:'indoor',loc:'jo_house'};
+      if(dtDoor===T_CAFE_D)return{type:'indoor',loc:'cafe'};
+      if(dtDoor===T_APT_D)return{type:'indoor',loc:'may_apt'};
+    }
+    return{type:'door_prompt'};
+  }
   const cx=G.mx+9, cy=G.my+11;
   const col=Math.floor(cx/TILE), row=Math.floor(cy/TILE);
   const t=extTile(col,row);
@@ -3075,24 +3520,16 @@ function checkExtSpecial(aPressed){
   if(t===T_ENC1&&!G.cleared[0])return{type:'enc',id:0};
   if(t===T_ENC2&&!G.cleared[1])return{type:'enc',id:1};
   if(t===T_ENC_DISHES&&!G.cleared[3])return{type:'enc',id:3};
+  if(t===T_ENC_BUS&&!G.cleared[4])return{type:'enc',id:4};
   if(t===T_CAVE_E) return{type:'cave'};
   // Taxi: step-on, check conditions
   if(t===T_TAXI){
-    if(G.hasBoarding&&G.farewellDone&&G.visitedHouse&&!G.cabFarewellDone)
-      return{type:'cab_farewell'};
     if(G.hasBoarding&&G.farewellDone&&G.cabFarewellDone) return{type:'airport'};
-    if(G.hasBoarding&&!G.farewellDone) return{type:'taxi_blocked',msg:'Visit your family first.'};
+    if(G.hasBoarding&&!G.farewellDone)
+      return{type:'taxi_blocked',msg:'Visit Grandma — talk to her inside.'};
+    if(G.hasBoarding&&G.farewellDone&&!G.cabFarewellDone)
+      return{type:'taxi_blocked',msg:'Step outside from home first — everyone\'s at the cab.'};
     if(!G.hasBoarding) return{type:'taxi_blocked',msg:'You need your boarding pass.'};
-  }
-  // Doors before Gary — multi-sample so the narrow family door still registers
-  const dt=doorTileUnderMay();
-  if(dt===T_HOUSE_D||dt===T_CAFE_D||dt===T_JO_DOOR){
-    if(aPressed){
-      if(dt===T_HOUSE_D)return{type:'indoor',loc:'house'};
-      if(dt===T_JO_DOOR)return{type:'indoor',loc:'jo_house'};
-      if(dt===T_CAFE_D)return{type:'indoor',loc:'cafe'};
-    }
-    return{type:'door_prompt'};
   }
   // Gary NPC: ENTER/SPACE press when nearby
   const gdx=Math.hypot(G.mx-NPC_GARY.wx,G.my-NPC_GARY.wy);
@@ -3170,22 +3607,24 @@ function loop(ts){
         else {
           G.cooldown=1.5;
           if(hit.type==='enc'){
-            G.curEnc=hit.id;G.dline=0;G.battlePhase=null;G.kobeAttacks=0;G.kobePhase=0;G.kobeBattleX=22;G.battleTimer=0;G.kobeAttackPick=0;
+            G.curEnc=hit.id;G.dline=0;G.battlePhase=null;G.kobeAttacks=0;G.kobePhase=0;G.kobeBattleX=kobeHeroX();G.battleTimer=0;G.kobeAttackPick=0;
             G.mode='BATTLE';flashScreen();
           } else if(hit.type==='indoor'){
             G.prevMX=G.mx;G.prevMY=G.my;
-            G.indLoc=hit.loc;G.indX=240;G.indY=200;G.indKX=210;G.indKY=210;
+            G.indLoc=hit.loc;
+            if(hit.loc==='may_apt'){
+              G.indX=MAY_APT_RX+204;G.indY=MAY_APT_RY+88;
+              G.indKX=G.indX-28;G.indKY=G.indY+6;
+            } else {
+              G.indX=240;G.indY=200;G.indKX=210;G.indKY=210;
+            }
             if(hit.loc==='house') G.visitedHouse=true;
             else if(hit.loc==='cafe') G.visitedCafe=true;
-            if(hit.loc==='house'&&G.hasBoarding&&!G.farewellDone){
-              G.mode='FAREWELL';G.fwSub=0;G.fwTimer=0;G.fwLine=0;G.fwFade=0;
-            } else { G.mode='INDOOR'; }
+            G.mode='INDOOR';
             flashScreen();
           } else if(hit.type==='cave'){
             G.caveX=2*TILE+8;G.caveY=2*TILE+8;G.caveKX=TILE+8;G.caveKY=2*TILE+14;
             G.mode='CAVE';flashScreen();
-          } else if(hit.type==='cab_farewell'){
-            G.mode='CAB_FAREWELL';G.cabFwLine=0;flashScreen();
           } else if(hit.type==='airport'){
             G.mode='AIRPORT';G.airSub=0;G.airLine=0;G.airChoice=0;
             G.kobeBoltActive=false;G.kobeBoltX=148;flashScreen();
@@ -3216,7 +3655,7 @@ function loop(ts){
         const pa=Math.floor(G.tick/14)%4,po=pa<2?pa:3-pa;
         r(hsx-28,hsy-4+po,72,18,'rgba(0,0,0,0.7)');
         ctx.fillStyle='#f8c860';ctx.font='bold 10px monospace';ctx.textAlign='center';
-        ctx.fillText('home \u2665 visit family',hsx+8,hsy+10+po);ctx.textAlign='left';
+        ctx.fillText('Grandma — talk inside home \u2665',hsx+8,hsy+10+po);ctx.textAlign='left';
       }
     }
     // Prompts
@@ -3244,7 +3683,8 @@ function loop(ts){
     G.battleTimer=(G.battleTimer||0)+dt;
     if(!G.battlePhase){
       G.battlePhase='dialogue';G.dline=0;G.kobeAttacks=0;G.kobePhase=0;
-      G.kobeBattleX=22;G.battleTimer=0;G.kobeAttackPick=0;
+      G.kobeBattleX=kobeHeroX();G.battleTimer=0;G.kobeAttackPick=0;
+      G.busHonkPlayed=false;
       G.mayHP=G.mayMaxHP;
       G.enemyAttackMsg='';
     }
@@ -3256,14 +3696,15 @@ function loop(ts){
         G.battlePhase='enemyattack';G.battleTimer=0;
       }}
     } else if(G.battlePhase==='enemyattack_first'||G.battlePhase==='enemyattack'){
-      // Enemy attacks May — themed per encounter, never KO
       const dmg=1;
-      G.mayHP=Math.max(1,G.mayHP-dmg); // floor at 1, never 0
+      G.mayHP=Math.max(1,G.mayHP-dmg);
+      if(G.curEnc===4&&!G.busHonkPlayed){playBusHonk();G.busHonkPlayed=true;}
       const attackMsgs=[
         ['📋 PAPERWORK AVALANCHE!','Contracts buried May!\n-1 HP'],
         ['💸 INVOICE STRIKE!','The bill hit hard!\n-1 HP'],
         ['🌧️ COLD RAIN CHILL!','Water drips from the stone.\n-1 HP'],
         ['💧 SOAPY WAVE!','Bucket splash!\n-1 HP'],
+        ['📣 DIESEL KLAXON!','Horn + brakes.\nKobe\'s whole skull rattles!\n-1 HP'],
       ];
       G.enemyAttackMsg=attackMsgs[G.curEnc]||attackMsgs[0];
       G.battlePhase='enemyrecoil';G.battleTimer=0;
@@ -3274,14 +3715,14 @@ function loop(ts){
       drawBattle();
       if(G.keys['ArrowUp']||G.keys['w']) G.kobeAttackPick=0;
       if(G.keys['ArrowDown']||G.keys['s']) G.kobeAttackPick=1;
-      if(G.aBtn){G.aBtn=false;G.battlePhase='koberun';G.kobeBattleX=22;G.kobePhase=1;G.battleTimer=0;}
+      if(G.aBtn){G.aBtn=false;G.battlePhase='koberun';G.kobeBattleX=kobeHeroX();G.kobePhase=1;G.battleTimer=0;}
     } else if(G.battlePhase==='koberun'){
       G.kobeBattleX+=W*1.4*dt;
       drawBattle();
       if(G.kobeBattleX>W-260){G.kobePhase=2;G.battleTimer=0;G.battlePhase='kobebite';}
     } else if(G.battlePhase==='kobebite'){
       drawBattle();
-      if(G.battleTimer>0.6){G.kobeAttacks=(G.kobeAttacks||0)+1;G.kobePhase=3;G.kobeBattleX=22;G.battleTimer=0;G.battlePhase='kobereturn';}
+      if(G.battleTimer>0.6){G.kobeAttacks=(G.kobeAttacks||0)+1;G.kobePhase=3;G.kobeBattleX=kobeHeroX();G.battleTimer=0;G.battlePhase='kobereturn';}
     } else if(G.battlePhase==='kobereturn'){
       drawBattle();
       if(G.battleTimer>0.4){G.kobePhase=0;G.battleTimer=0;G.battlePhase='result';}
@@ -3292,7 +3733,7 @@ function loop(ts){
         G.cleared[G.curEnc]=true;
         const wasEnc=G.curEnc;
         G.curEnc=-1;G.dline=0;G.battlePhase=null;G.kobeAttacks=0;G.kobePhase=0;
-        G.kobeBattleX=22;G.battleTimer=0;G.enemyAttackMsg='';G.kobeAttackPick=0;
+        G.kobeBattleX=kobeHeroX();G.battleTimer=0;G.enemyAttackMsg='';G.kobeAttackPick=0;
         G.mayHP=G.mayMaxHP; // heal after battle
         G.cooldown=1.6;flashScreen();
         if(wasEnc===2){G.mode='CAVE';}else{G.mode='EXPLORE';}
@@ -3331,9 +3772,29 @@ function loop(ts){
   else if(G.mode==='INDOOR'){
     moveInd(dx,dy,dt);
     G.indKX=G.indX-28; G.indKY=G.indY+6;
-    if(G.indY>310&&G.cooldown<=0&&(G.indLoc==='house'||G.indLoc==='jo_house')){
-      G.mode='EXPLORE';G.mx=G.prevMX;G.my=G.prevMY;
-      G.cooldown=0.45;updateCamera();flashScreen();
+    if(G.cooldown<=0){
+      const loc=G.indLoc;
+      if(loc==='may_apt'&&mayFlatAptExitTriggered()){
+        G.mode='EXPLORE';
+        snapOutsideMayApt();
+        G.indLoc='';
+        G.cooldown=0.45;updateCamera();flashScreen();
+      } else if(G.indY>310&&(loc==='house'||loc==='jo_house')){
+        const ih=loc==='house';
+        if(ih&&G.hasBoarding&&G.farewellDone&&!G.cabFarewellDone){
+          G.mode='CAB_FAREWELL';
+          G.cabFwLine=0;
+          snapOutsideMayHouse();
+          G.indLoc='';
+          G.cooldown=0.55;updateCamera();flashScreen();
+        } else {
+          G.mode='EXPLORE';
+          if(ih) snapOutsideMayHouse();
+          else snapOutsideJoHouse();
+          G.indLoc='';
+          G.cooldown=0.45;updateCamera();flashScreen();
+        }
+      }
     }
     if(G.indLoc==='cafe'&&G.indY>290&&G.cooldown<=0){
       G.mode='EXPLORE';G.mx=G.prevMX;G.my=G.prevMY;
@@ -3346,36 +3807,49 @@ function loop(ts){
         const sd=Math.hypot(G.indX-cafeStaffMidX,G.indY-100);
         if(sd<90){G.aBtn=false;G.mode='INDOOR_TALK';G.indNpcLine=0;G.indNpcWho='couple';G.cooldown=1.0;}
       } else if(G.indLoc==='house'){
-        G.aBtn=false;G.mode='INDOOR_TALK';G.indNpcLine=0;
-        G.indNpcWho=G.farewellDone?'house_revisit':'house_browse';G.cooldown=1.0;
+        const gxN=256, gyN=216;
+        const nearGrandma=Math.hypot(G.indX-gxN,G.indY-gyN)<102;
+        if(G.hasBoarding&&!G.farewellDone&&!nearGrandma) G.aBtn=false;
+        else {
+          G.aBtn=false;G.mode='INDOOR_TALK';G.indNpcLine=0;
+          G.indNpcWho=(G.hasBoarding&&!G.farewellDone)?'house_boarding_sendoff':(G.farewellDone?'house_revisit':'house_browse');
+          G.cooldown=1.0;
+        }
       } else if(G.indLoc==='jo_house'){
         G.aBtn=false;G.mode='INDOOR_TALK';G.indNpcLine=0;G.indNpcWho='jo_house';G.cooldown=1.0;
+      } else if(G.indLoc==='may_apt'){
+        G.aBtn=false;G.mode='INDOOR_TALK';G.indNpcLine=0;G.indNpcWho='may_apt_browse';G.cooldown=1.0;
       }
     }
     if(G.indLoc==='house')
       drawHouseInterior(G.indX,G.indY,G.tick,false,0,null,null,null,null,false,'may');
     else if(G.indLoc==='jo_house')
       drawHouseInterior(G.indX,G.indY,G.tick,false,0,null,null,null,null,false,'jo');
+    else if(G.indLoc==='may_apt')
+      drawMayAptInterior(G.indX,G.indY,G.tick);
     else
       drawCafeInterior(G.indX,G.indY,G.tick);
-    if(G.indY>300){
+    if(G.indLoc==='may_apt'?mayFlatNearDoorPrompt():G.indY>300){
       r(W/2-80,H-50,160,26,'rgba(0,0,0,0.6)');
       ctx.fillStyle='rgba(200,190,160,0.8)';ctx.font='12px monospace';ctx.textAlign='center';
-      ctx.fillText('Walk south to exit',W/2,H-32);ctx.textAlign='left';
+      ctx.fillText(G.indLoc==='may_apt'?'Door (corner) — step into doorway':'Walk south to exit',W/2,H-32);ctx.textAlign='left';
     }
     // Interact prompt
     r(W/2-90,H-50,180,22,'rgba(0,0,0,0.5)');
     ctx.fillStyle='rgba(200,190,160,0.7)';ctx.font='10px monospace';ctx.textAlign='center';
-    ctx.fillText('SPACE/ENTER: talk  \u2193 south: exit',W/2,H-33);ctx.textAlign='left';
+    ctx.fillText(G.indLoc==='may_apt'?'SPACE: talk    \u2199 bottom-left: exit':'SPACE/ENTER: talk  \u2193 south: exit',W/2,H-33);ctx.textAlign='left';
     G.cooldown=Math.max(0,G.cooldown-dt);
   }
 
   // ── INDOOR_TALK ──
   else if(G.mode==='INDOOR_TALK'){
+    const sendHL=(G.indLoc==='house'&&G.indNpcWho==='house_boarding_sendoff')?G.indNpcLine:-1;
     if(G.indLoc==='house')
-      drawHouseInterior(G.indX,G.indY,G.tick,false,0,null,null,null,null,false,'may');
+      drawHouseInterior(G.indX,G.indY,G.tick,false,0,null,null,null,null,false,'may',sendHL);
     else if(G.indLoc==='jo_house')
       drawHouseInterior(G.indX,G.indY,G.tick,false,0,null,null,null,null,false,'jo');
+    else if(G.indLoc==='may_apt')
+      drawMayAptInterior(G.indX,G.indY,G.tick);
     else
       drawCafeInterior(G.indX,G.indY,G.tick);
     const indLines={
@@ -3400,16 +3874,27 @@ function loop(ts){
         {sp:'May',     tx:"Grandma, I'm literally the same."},
         {sp:'Grandma', tx:'You are DIFFERENT. I can see it!'},
       ],
+      house_boarding_sendoff:HOUSE_BOARDING_SENDOFF_LINES,
       house_revisit:[
         {sp:'Grandma', tx:'Back already? The kettle\'s still warm.'},
         {sp:'May',     tx:'Wanted one more pass through home.'},
         {sp:'Grandma', tx:'Stay as long as you like, mei mei.'},
       ],
+      may_apt_browse:[
+        {sp:'May', tx:'Four boxes and a duffel.\nEverything left is just walls.'},
+        {sp:'May', tx:'Barcelona tonight. Hard to believe.'},
+        {sp:'Kobe', tx:'Woof.'},
+      ],
     };
     const il=indLines[G.indNpcWho]||[{sp:'...',tx:'...'}];
     const ll=il[Math.min(G.indNpcLine,il.length-1)];
+    if(G.indNpcWho==='house_boarding_sendoff'&&G.indNpcLine===9) drawWoof(G.indX-34,G.indY);
+    else if(G.indNpcWho==='may_apt_browse'&&G.indNpcLine===2) drawWoof(G.indX-34,G.indY);
     drawDialog([ll.tx],ll.sp);
-    if(G.aBtn){G.aBtn=false;G.indNpcLine++;if(G.indNpcLine>=il.length){G.mode='INDOOR';G.cooldown=1.0;}}
+    if(G.aBtn){G.aBtn=false;G.indNpcLine++;if(G.indNpcLine>=il.length){
+      if(G.indNpcWho==='house_boarding_sendoff') G.farewellDone=true;
+      G.mode='INDOOR';G.cooldown=1.0;
+    }}
   }
 
   // ── CAVE ──
@@ -3486,8 +3971,8 @@ function loop(ts){
       if(G.fwFade>=1.2){
         G.farewellDone=true;
         G.mode='EXPLORE';
-        // Place May a few tiles south of house door so she doesn't re-trigger entry
-        G.mx=G.prevMX; G.my=G.prevMY+TILE*2;
+        snapOutsideMayHouse();
+        G.indLoc='';
         G.cooldown=0.55;updateCamera();flashScreen();
       }
     }
@@ -3588,7 +4073,7 @@ function loop(ts){
     if(G.aBtn&&G.credTimer>4){
       G.aBtn=false;
       // Restart
-      G.mode='TITLE';G.cleared=[false,false,false,false];
+      G.mode='TITLE';G.cleared=[false,false,false,false,false];
       G.hasBoarding=false;G.farewellDone=false;G.cabFarewellDone=false;G.boardingPickup=false;
       G.mx=2*TILE+8;G.my=8*TILE+8;G.kx=2*TILE-18;G.ky=8*TILE+14;
       G.hist.length=0;for(let i=0;i<HIST_LEN;i++)G.hist.push({x:G.mx,y:G.my});
