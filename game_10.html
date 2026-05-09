@@ -49,7 +49,7 @@ const MAY_FLAT_LAYOUT_REL=[
 const ECOLS=28, EROWS=20;   // exterior map size
 const CCOLS=20, CROWS=10;   // cave map size
 const SPEED=76;              // px/sec
-const TAKEOFF_PAUSE_BEFORE_ROLL=3; // seconds — runway + rain backdrop before engines roll
+const TAKEOFF_PAUSE_BEFORE_ROLL=3; // seconds — runway + dusk backdrop before engines roll
 const HIST_LEN=200, DOG_DELAY=52;
 
 // Exterior tile types
@@ -221,8 +221,8 @@ const INTRO_LINES = [
 const FAREWELL_LINES = [
   { sp:'Grandma', tx:"BARCELONA! So exciting!\nWe will watch from here!" },
   { sp:'Grandma', tx:'Call when you land. We celebrate!' },
-  { sp:'Father',  tx:"We are SO proud of you, May!" },
-  { sp:'Father',  tx:"Go show them what you've got. 🎉" },
+  { sp:'Dad',  tx:"We are SO proud of you, May!" },
+  { sp:'Dad',  tx:"Go show them what you've got. 🎉" },
   { sp:'',        tx:'(Her hand pauses. Then she turns\naround — she is smiling.)' },
   { sp:'May',     tx:"I'll call when I land. I love you all." },
   { sp:'Kobe',    tx:'WOOF WOOF!' },
@@ -233,8 +233,8 @@ const HOUSE_BOARDING_SENDOFF_LINES = [
   { sp:'Grandma', tx:'Mei mei — show Grandma.\nThe real ticket?' },
   { sp:'May',     tx:'Boarding pass. Right here in my bag.' },
   { sp:'Grandma', tx:'Ha! Then we do this properly.\nEveryone — come wish her luck!' },
-  { sp:'Father',  tx:'There she is. Barcelona-bound.' },
-  { sp:'Father',  tx:'We are so proud of you, May.\nGo show them what you\'ve got.' },
+  { sp:'Dad',  tx:'There she is. Barcelona-bound.' },
+  { sp:'Dad',  tx:'We are so proud of you, May.\nGo show them what you\'ve got.' },
   { sp:'DoDo',    tx:'...Socks in your carry-on.\nAnd tissues. Just in case.' },
   { sp:'DoDo',    tx:'Good luck. Bring back photos.' },
   { sp:'Grandma', tx:'All our love goes with you.' },
@@ -245,7 +245,7 @@ const HOUSE_BOARDING_SENDOFF_LINES = [
 // Kerbside — leaving home triggers this (family + cab already outside)
 const CAB_FAREWELL_LINES = [
   { sp:'Grandma', tx:'The cab\'s waited. One more hug counts double.' },
-  { sp:'Father',  tx:'Passport. Phone charger. Kobe.\nYou\'re covered.' },
+  { sp:'Dad',  tx:'Passport. Phone charger. Kobe.\nYou\'re covered.' },
   { sp:'DoDo',    tx:'...There are buns in your bag.\nEat before you sleep.' },
   { sp:'Gary',    tx:'Whenever you\'re ready.' },
   { sp:'May',     tx:'I love you all. Really.' },
@@ -293,6 +293,8 @@ const G = {
   cleared: [false,false,false,false,false],
   hasBoarding: false,
   farewellDone: false,
+  sendoffDadWalk: 0,
+  sendoffDoWalk: 0,
   cabFarewellDone: false,
   cabFwLine: 0,
   visitedHouse: false,
@@ -376,9 +378,13 @@ const canvas=document.getElementById('c');
 const ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
 
-/** Grandma dialogue portrait — standalone asset (`assets/grandmapreview.png`). Others: no portrait slot yet. */
+/** Standalone dialogue portraits (96×96 framed area in dialog box): Grandma, Gary, May. */
 const DIALOG_GRANDMA_PORTRAIT=new Image();
 DIALOG_GRANDMA_PORTRAIT.src='assets/grandmapreview.png';
+const DIALOG_GARY_PORTRAIT=new Image();
+DIALOG_GARY_PORTRAIT.src='assets/gary.png';
+const DIALOG_MAY_PORTRAIT=new Image();
+DIALOG_MAY_PORTRAIT.src='assets/may.png';
 
 window.addEventListener('keydown',e=>{
   G.keys[e.key]=true;
@@ -875,7 +881,7 @@ function drawRadiator(ox,oy){
   r(x+4,y-4,10,4,'#7a7e88'); // top pipe
 }
 
-// NPC: Father
+// NPC: Dad (sprite helper still named drawFather)
 function drawFather(ox,oy){
   const x=Math.floor(ox),y=Math.floor(oy);
   r(x+5,y+26,6,6,'#1a1828'); r(x+13,y+26,6,6,'#1a1828');
@@ -1775,7 +1781,7 @@ function drawGrandmaWorld(wx,wy,tick){
 function drawFatherWorld(wx,wy,tick){
   const px=Math.floor(wx-G.camX)-6, py=Math.floor(wy-G.camY)-14;
   drawFather(px,py);
-  npcNameTag(px+8,py+14,'Father','#c8e0f8');
+  npcNameTag(px+8,py+14,'Dad','#c8e0f8');
 }
 function drawSadonnaWorld(wx,wy,tick){
   const px=Math.floor(wx-G.camX)-6, py=Math.floor(wy-G.camY)-14;
@@ -2378,10 +2384,12 @@ function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,f
     let gxD, gyD, fxD, fyD, dodX=KX+46, dodY=KY+62;
     if(sendoffLine>=0){
       gxD=RX+94; gyD=RY+124;
-      const dadT=Math.min(1,Math.max(0,sendoffLine-2)/3);
+      const dadDiscrete=Math.min(1,Math.max(0,sendoffLine-2)/3);
+      const doDiscrete=Math.min(1,Math.max(0,sendoffLine-4)/3);
+      const dadT=Math.max(dadDiscrete,G.sendoffDadWalk??0);
+      const doT=Math.max(doDiscrete,G.sendoffDoWalk??0);
       const fxa=RX+282, fya=RY+128, fxb=RX+212, fyb=RY+122;
       fxD=fxa+(fxb-fxa)*dadT; fyD=fya+(fyb-fya)*dadT;
-      const doT=Math.min(1,Math.max(0,sendoffLine-4)/3);
       const doxa=KX+48, doya=KY+64, doxb=RX+178, doyb=RY+116;
       dodX=doxa+(doxb-doxa)*doT; dodY=doya+(doyb-doya)*doT;
       fxD=Math.max(RX+RW*0.35, Math.min(fxD, RX+RW-40));
@@ -2409,7 +2417,7 @@ function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,f
 
     npcLabel(dodX,dodY,'DoDo','#f0d898');
     npcLabel(gxD,gyD,'Grandma','#f8e8c8');
-    npcLabel(fxD,fyD,'Father','#c8e0f8');
+    npcLabel(fxD,fyD,'Dad','#c8e0f8');
   }
 
   // May + Kobe (clamped to room)
@@ -2829,7 +2837,11 @@ function normalizeDialogSpeaker(sp){
 function drawDialog(lines,speaker=''){
   const bx=6,by=H-128,bw=W-12,bh=122;
   const norm=normalizeDialogSpeaker(speaker);
-  const grandmaPortrait=norm.toLowerCase()==='grandma';
+  const nl=norm.toLowerCase();
+  let portraitImg=null;
+  if(nl==='grandma') portraitImg=DIALOG_GRANDMA_PORTRAIT;
+  else if(nl==='gary') portraitImg=DIALOG_GARY_PORTRAIT;
+  else if(nl==='may') portraitImg=DIALOG_MAY_PORTRAIT;
   const PW=96, PH=96;
 
   r(bx-3,by-3,bw+6,bh+6,C.uiB);
@@ -2838,9 +2850,9 @@ function drawDialog(lines,speaker=''){
   ctx.strokeStyle=C.uiB;ctx.lineWidth=1;ctx.strokeRect(bx+7,by+7,bw-14,bh-14);
 
   let textLeft=bx+16;
-  if(grandmaPortrait){
+  if(portraitImg){
     const px=bx+12, py=by+bh-PH-12;
-    const img=DIALOG_GRANDMA_PORTRAIT;
+    const img=portraitImg;
     if(img.complete && img.naturalWidth>0){
       ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight, px, py, PW, PH);
     }
@@ -2880,9 +2892,11 @@ function drawYesNo(sel){
 // ============================================================
 // Naked Man battle: same sky + parallax city as explore mode (no tile map), full-screen dusk film + rain
 // opts.titleScreen: no rain, skyline sits lower (sky dominates top), lighter grade for readability
+// opts.noRain: dusk grade without falling rain (takeoff / flying finale)
 function drawBattleRainBackdrop(fr, opts){
   opts=opts||{};
   const title=!!opts.titleScreen;
+  const noRain=!!opts.noRain;
   const ox=G.camX, oy=G.camY;
   G.camX=Math.max(0, Math.min(23*TILE+32-W/2, (ECOLS-20)*TILE));
   G.camY=Math.max(0, Math.min(5*TILE, (EROWS-15)*TILE));
@@ -2903,19 +2917,21 @@ function drawBattleRainBackdrop(fr, opts){
     ctx.fillStyle='rgba(6,8,14,0.35)';
     ctx.fillRect(0,0,W,H);
 
-    ctx.strokeStyle='rgba(215,225,240,0.22)';
-    ctx.lineWidth=1;
-    const t=fr*6;
-    for(let i=0;i<140;i++){
-      const ix=(i*317+t+i*i)%W;
-      const iy=(i*149+t*2+i*7)%H;
-      ctx.beginPath(); ctx.moveTo(ix,iy); ctx.lineTo(ix-5,iy+15); ctx.stroke();
-    }
-    ctx.strokeStyle='rgba(255,255,255,0.06)';
-    for(let i=0;i<55;i++){
-      const ix=(i*401+fr*8)%W;
-      const iy=(fr*5+i*23)%H;
-      ctx.beginPath(); ctx.moveTo(ix,iy); ctx.lineTo(ix-2,iy+18); ctx.stroke();
+    if(!noRain){
+      ctx.strokeStyle='rgba(215,225,240,0.22)';
+      ctx.lineWidth=1;
+      const t=fr*6;
+      for(let i=0;i<140;i++){
+        const ix=(i*317+t+i*i)%W;
+        const iy=(i*149+t*2+i*7)%H;
+        ctx.beginPath(); ctx.moveTo(ix,iy); ctx.lineTo(ix-5,iy+15); ctx.stroke();
+      }
+      ctx.strokeStyle='rgba(255,255,255,0.06)';
+      for(let i=0;i<55;i++){
+        const ix=(i*401+fr*8)%W;
+        const iy=(fr*5+i*23)%H;
+        ctx.beginPath(); ctx.moveTo(ix,iy); ctx.lineTo(ix-2,iy+18); ctx.stroke();
+      }
     }
   }
 }
@@ -3220,53 +3236,182 @@ function drawFarewellScene(){
   }
 }
 
-// AIRPORT scene
+// Small distant jet outside terminal windows (pixel silhouette)
+function drawAirportExteriorPlane(px,py){
+  const x=Math.floor(px), y=Math.floor(py);
+  r(x+6,y+14,36,8,'#dde0e8'); r(x+36,y+16,28,6,'#c8ccd4');
+  r(x+14,y+10,10,8,'#eaeef4'); r(x+42,y+17,10,5,'#787880');
+  r(x+20,y+12,44,3,C.pink); r(x+24,y+14,6,4,'#2a3040'); r(x+34,y+14,6,4,'#2a3040');
+  r(x+58,y+18,12,5,'#f0f4f8'); r(x+52,y+22,6,4,'#686870');
+}
+
+// Seated airport passenger (compact, facing forward-ish)
+function drawAirportBenchPassenger(ox,oy,tick,shirt,hasBag){
+  const x=Math.floor(ox), y=Math.floor(oy), bob=(Math.floor(tick/14)%2);
+  r(x+4,y+18,5,8,'#282830'); r(x+13,y+18,5,8,'#282830');
+  r(x+3,y+9,16,10,shirt);
+  r(x+1,y+10-bob,4,9,shirt); r(x+17,y+10,4,9,shirt);
+  r(x+9,y+6,4,3,C.skin); r(x+6,y+1,10,8,C.skin); r(x+6,y-2,10,4,'#181820');
+  if(hasBag){
+    r(x-8,y+14,10,12,'#3a4868'); r(x-6,y+12,6,4,'#2a3858');
+  }
+}
+
+// Walking traveller (side profile, shuffles horizontally)
+function drawAirportWalker(ox,oy,tick){
+  const x=Math.floor(ox), y=Math.floor(oy), w=(Math.floor(tick/8)%2);
+  r(x+6,y+20,5,7,'#242428'); r(x+13,y+20,5,7,'#242428');
+  r(x+5,y+11,14,10,'#485878'); r(x+3,y+12-w,4,8,'#485878'); r(x+17,y+11+w,4,8,'#485878');
+  r(x+10,y+8,4,3,C.skin); r(x+11,y+2,8,8,C.skin); r(x+12,y,6,4,'#201818');
+  r(x+18,y+14,8,10,'#5a4038'); // carry-on
+}
+
+// Janitor / cleaner with broom
+function drawAirportJanitor(ox,oy,tick){
+  const x=Math.floor(ox), y=Math.floor(oy), sw=(Math.sin(tick*0.04)*0.5+0.5);
+  r(x+6,y+22,5,6,'#383840'); r(x+13,y+22,5,6,'#383840');
+  r(x+5,y+12,14,11,'#9a9888'); r(x+3,y+13,4,9,'#9a9888'); r(x+17,y+13,4,9,'#9a9888');
+  r(x+10,y+9,4,3,C.skin); r(x+8,y+3,8,8,C.skin); r(x+8,y,8,4,'#585048');
+  ctx.strokeStyle='#6a6048'; ctx.lineWidth=3; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(x+22,y+26); ctx.quadraticCurveTo(x+44,y+22+sw*6,x+58,y+28+sw*4); ctx.stroke();
+  r(x+56,y+24,8,3,'#d8c8a0');
+}
+
+function drawAirportQueueRopes(){
+  const y1=H-208, y2=H-198;
+  const posts=[[W-228,H-218],[W-198,H-228],[W-172,H-218]];
+  for(const [px,py] of posts){
+    r(px-3,py,6,26,'#786858'); r(px-4,py-4,8,6,'#584838');
+    r(px-2,py+22,4,4,'#483828');
+  }
+  ctx.strokeStyle='rgba(200,60,60,0.85)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(posts[0][0]+3,posts[0][1]+6);
+  ctx.quadraticCurveTo(W-210,H-232,posts[1][0],posts[1][1]+6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(posts[1][0]+3,posts[1][1]+8);
+  ctx.quadraticCurveTo(W-185,H-238,posts[2][0],posts[2][1]+6); ctx.stroke();
+}
+
+// AIRPORT gate — departure lounge (May/Kobe + agent positions fixed)
 function drawAirport(){
-  r(0,0,W,H,'#d4d0c8');
-  r(0,0,W,52,'#e8e4dc');
-  r(0,H-110,W,110,'#c8c4bc');
-  ctx.strokeStyle='#b0ac9c';ctx.lineWidth=1;
-  for(let x=0;x<W;x+=55){ctx.strokeRect(x,H-110,55,55);ctx.strokeRect(x,H-55,55,55);}
+  const t=G.tick, fr=t*0.016;
+
+  r(0,0,W,H,'#d6d2ca');
+  const ceilGrad=ctx.createLinearGradient(0,0,0,54);
+  ceilGrad.addColorStop(0,'#f4ebe4'); ceilGrad.addColorStop(1,'#dfd8d0');
+  ctx.fillStyle=ceilGrad; ctx.fillRect(0,0,W,54);
+
+  // Overhead signage — gate / arrows / boarding zones
+  ctx.fillStyle='#ebe6de'; ctx.strokeStyle='#a09888'; ctx.lineWidth=2;
+  r(W/2-168,10,336,36,'#ebe6de'); ctx.strokeRect(W/2-166,11,332,32);
+  ctx.fillStyle='#284868'; ctx.font='bold 13px monospace'; ctx.textAlign='center';
+  ctx.fillText('\u2190  GROUP 1-3',W/2-108,30);
+  ctx.fillText('GATE 27',W/2,30);
+  ctx.fillText('GROUP 4+  \u2192',W/2+108,30);
+  ctx.textAlign='left';
+  ctx.fillStyle='#6a6058'; ctx.font='bold 11px monospace';
+  ctx.fillText('BOARDING',W/2+118,22);
+
+  // Departure board / FIDS — wall strip above seating (below window band)
+  const boardX=24, boardY=168, boardW=268, boardH=44;
+  r(boardX-4,boardY-4,boardW+8,boardH+8,'#283038'); r(boardX,boardY,boardW,boardH,'#0c1018');
+  ctx.strokeStyle='#486078'; ctx.lineWidth=2; ctx.strokeRect(boardX+2,boardY+2,boardW-4,boardH-4);
+  ctx.fillStyle='#48d868'; ctx.font='bold 11px monospace';
+  ctx.fillText('FLIGHT    DESTINATION      STATUS',boardX+10,boardY+14);
+  ctx.fillStyle='#58f078';
+  ctx.fillText('CX838     BARCELONA       BOARDING',boardX+10,boardY+30);
+  ctx.fillStyle='#889898'; ctx.font='10px monospace';
+  ctx.fillText('HKIA \u2022 T1',boardX+boardW-62,boardY+38);
+
+  // Large window wall — cool daylight vs warm interior
+  const winTop=54, winH=108;
+  ctx.fillStyle='#9aa8b0'; ctx.fillRect(6,winTop,W-12,winH);
   for(let i=0;i<5;i++){
-    const wx=16+i*122,wy=58;
-    r(wx,wy,108,72,'#3a5a7a'); r(wx+3,wy+3,102,66,'#5080a8');
-    r(wx+3,wy+3,48,31,'#6898c0'); r(wx+55,wy+3,50,31,'#6898c0');
-    r(wx+3,wy+37,48,29,'#4a7090'); r(wx+55,wy+37,50,29,'#4a7090');
-    r(wx+50,wy+3,4,66,'#3a5a7a'); r(wx+3,wy+34,102,5,'#3a5a7a');
+    const wx=10+i*122, wy=winTop+6, ww=114, wh=winH-14;
+    const g=ctx.createLinearGradient(0,wy,0,wy+wh);
+    g.addColorStop(0,'#aac8e8'); g.addColorStop(0.42,'#c8dce8'); g.addColorStop(0.78,'#889098'); g.addColorStop(1,'#5a5e68');
+    ctx.fillStyle=g; ctx.fillRect(wx,wy,ww,wh);
+    r(wx,wy+wh-32,ww,30,'#686c74'); r(wx,wy+wh-34,ww,3,'#989ca8');
+    // Distant plane outside each bay (slight parallax)
+    drawAirportExteriorPlane(wx+22+Math.sin(fr+i*1.7)*10, wy+wh-56+i*2);
+    ctx.strokeStyle='rgba(255,255,255,0.14)'; ctx.lineWidth=1;
+    for(let ly=wy+12;ly<wy+wh-36;ly+=18) ctx.strokeRect(wx+8,ly,ww-16,14);
   }
-  r(W/2-148,8,296,42,'#0a1420'); r(W/2-144,10,288,38,'#0d1a28');
-  ctx.fillStyle=C.gold;ctx.font='bold 15px monospace';ctx.textAlign='center';
-  ctx.fillText('GATE 27  \u2014  BARCELONA',W/2,35);ctx.textAlign='left';
-  for(const bx of[32,220,430]){
-    r(bx,H-158,130,14,'#9a8a62'); r(bx,H-172,130,16,'#b0a076');
-    r(bx+5,H-144,8,18,'#7a6a42'); r(bx+117,H-144,8,18,'#7a6a42');
+  ctx.strokeStyle='#d8d4cc'; ctx.lineWidth=5;
+  for(let i=0;i<=5;i++){ ctx.beginPath(); ctx.moveTo(8+i*122,winTop); ctx.lineTo(8+i*122,winTop+winH); ctx.stroke(); }
+  ctx.strokeStyle='#c0b8a8'; ctx.lineWidth=2; ctx.strokeRect(8,winTop,W-16,winH);
+
+  // Warm interior spill on floor / lower walls (vs cool windows)
+  ctx.fillStyle='rgba(255,232,210,0.14)';
+  ctx.fillRect(0,winTop+winH,W,H-(winTop+winH));
+  ctx.fillStyle='rgba(180,200,220,0.06)';
+  ctx.fillRect(6,winTop,W-12,winH);
+
+  // Floor tile grid
+  r(0,H-112,W,112,'#c6c2b8');
+  ctx.strokeStyle='#b0aca0'; ctx.lineWidth=1;
+  for(let x=0;x<W;x+=52){ ctx.strokeRect(x,H-112,52,52); ctx.strokeRect(x,H-60,52,52); }
+
+  // Corner vending / café nook (far left — clear of May at x~100)
+  const vx=8, vy=H-205;
+  r(vx,vy,52,92,'#4a4848'); r(vx+6,vy+8,40,56,'#283038'); r(vx+8,vy+12,36,20,'#486078');
+  ctx.fillStyle='rgba(240,80,60,0.35)'; ctx.fillRect(vx+10,vy+38,14,8); ctx.fillRect(vx+26,vy+42,12,7);
+  ctx.fillStyle='#e8e4dc'; ctx.font='8px monospace'; ctx.fillText('CAFE',vx+14,vy+72);
+  r(vx+18,vy-18,24,18,'#584848'); ctx.fillStyle='#d8c8b8'; ctx.font='7px monospace'; ctx.fillText('SNACK',vx+20,vy-6);
+
+  // Janitor (background, slow sweep arc)
+  const jx=160+Math.sin(fr*0.35)*55, jy=H-185;
+  drawAirportJanitor(jx,jy,t);
+
+  // Ambient walkers (loop across gate area, behind benches visually — draw before benches)
+  const wx1=(t*0.11)% (W+60)-30, wx2=W-40-(t*0.09)%(W+80);
+  drawAirportWalker(wx1,H-168,t);
+  drawAirportWalker(wx2,H-172,t+31);
+
+  // Benches + seated passengers + luggage
+  for(let bi=0;bi<3;bi++){
+    const bx=[32,220,430][bi];
+    r(bx,H-158,130,14,'#928868'); r(bx,H-172,130,16,'#aaa078');
+    r(bx+5,H-144,8,18,'#726442'); r(bx+117,H-144,8,18,'#726442');
+    const shirts=['#385878','#783848','#586848'];
+    drawAirportBenchPassenger(bx+22,H-194,t+bi*40,shirts[bi],bi!==1);
+    drawAirportBenchPassenger(bx+72,H-192,t+bi*77,shirts[(bi+1)%3],true);
+    if(bi===0) drawAirportBenchPassenger(bx+108,H-193,t,'#585078',false);
+    r(bx+38,H-138,18,12,'#3a4868'); r(bx+58,H-136,22,11,'#504848');
+    r(bx+92,H-134,16,10,'#684838'); r(bx+44,H-132,26,6,'#786858');
   }
-  // Gate podium
+
+  // Boarding zone plaque by podium
+  r(W-212,H-252,88,18,'#e8e4dc'); ctx.strokeStyle='#586878'; ctx.lineWidth=2;
+  ctx.strokeRect(W-210,H-250,84,14);
+  ctx.fillStyle='#284868'; ctx.font='bold 10px monospace'; ctx.textAlign='center';
+  ctx.fillText('ZONE A \u2014 BOARDING',W-168,H-239); ctx.textAlign='left';
+
+  // Gate podium + queue barriers
   r(W-160,H-230,80,100,'#3a4868');
   r(W-168,H-240,96,20,'#2a3858');
-  // Gate agent
+  drawAirportQueueRopes();
+
   ctx.save();ctx.translate(W-150,H-230);ctx.scale(1.4,1.4);drawGateAgent(0,0);ctx.restore();
-  // May and Kobe
+
   ctx.save();ctx.translate(100,H-220);ctx.scale(2,2);drawMay(0,0,G.tick,'down');ctx.restore();
   if(!G.kobeBoltActive){
     ctx.save();ctx.translate(148,H-188);ctx.scale(1.6,1.6);drawKobe(0,0,G.tick);ctx.restore();
   } else {
-    // Kobe bolting
     ctx.save();ctx.translate(G.kobeBoltX,H-188);ctx.scale(1.6,1.6);
     drawKobe(0,0,G.tick); ctx.restore();
     if(G.kobeBoltX<W-80) drawWoof(G.kobeBoltX+10,H-188);
   }
 }
 
-// TAKEOFF sequence — shares cinematic dusk + rain with naked-man battle
+// TAKEOFF sequence — dusk city parallax like battle, no rain (clear flying finale)
 function drawTakeoff(){
   const p=G.toPhase, t=G.toTimer;
   const prep=TAKEOFF_PAUSE_BEFORE_ROLL;
 
   if(p===0){
     const rollT=Math.max(0,t-prep);
-    drawBattleRainBackdrop(G.tick);
-    // Wet runway band
+    drawBattleRainBackdrop(G.tick,{noRain:true});
+    // Runway band
     r(0,H-76,W,76,'rgba(36,38,44,0.92)');
     r(0,H-74,W,72,'#4e5058');
     r(0,H-74,W,3,'#2a2c32');
@@ -3291,7 +3436,7 @@ function drawTakeoff(){
       }
     }
   } else if(p===1){
-    drawBattleRainBackdrop(G.tick);
+    drawBattleRainBackdrop(G.tick,{noRain:true});
     ctx.fillStyle='rgba(8,10,18,0.38)';
     ctx.fillRect(0,0,W,H);
     r(0,H-52,W,52,'rgba(46,48,54,0.75)');
@@ -3305,15 +3450,8 @@ function drawTakeoff(){
     ctx.fillRect(-54,18,128,8);
     drawRunwayPlane(-102,-16);
     ctx.restore();
-    ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=1;
-    const t2=t*55;
-    for(let i=0;i<50;i++){
-      const ix=(i*317+t2+i*i)%W;
-      const iy=(i*149+t2*2+i*7)%Math.floor(H*0.55);
-      ctx.beginPath();ctx.moveTo(ix,iy);ctx.lineTo(ix-4,iy+12);ctx.stroke();
-    }
   } else if(p===2){
-    drawBattleRainBackdrop(G.tick);
+    drawBattleRainBackdrop(G.tick,{noRain:true});
     ctx.fillStyle='rgba(6,8,14,0.25)';
     ctx.fillRect(0,0,W,H);
     const ta=Math.min(1,Math.max(0,(t-0.5)*1.2));
@@ -3813,6 +3951,7 @@ function loop(ts){
         else {
           G.aBtn=false;G.mode='INDOOR_TALK';G.indNpcLine=0;
           G.indNpcWho=(G.hasBoarding&&!G.farewellDone)?'house_boarding_sendoff':(G.farewellDone?'house_revisit':'house_browse');
+          if(G.indNpcWho==='house_boarding_sendoff'){G.sendoffDadWalk=0;G.sendoffDoWalk=0;}
           G.cooldown=1.0;
         }
       } else if(G.indLoc==='jo_house'){
@@ -3843,6 +3982,11 @@ function loop(ts){
 
   // ── INDOOR_TALK ──
   else if(G.mode==='INDOOR_TALK'){
+    if(G.indLoc==='house'&&G.indNpcWho==='house_boarding_sendoff'){
+      const walkRate=0.52;
+      if(G.indNpcLine>=2) G.sendoffDadWalk=Math.min(1,G.sendoffDadWalk+dt*walkRate);
+      if(G.indNpcLine>=4) G.sendoffDoWalk=Math.min(1,G.sendoffDoWalk+dt*walkRate);
+    }
     const sendHL=(G.indLoc==='house'&&G.indNpcWho==='house_boarding_sendoff')?G.indNpcLine:-1;
     if(G.indLoc==='house')
       drawHouseInterior(G.indX,G.indY,G.tick,false,0,null,null,null,null,false,'may',sendHL);
