@@ -242,6 +242,14 @@ const HOUSE_BOARDING_SENDOFF_LINES = [
   { sp:'Kobe',    tx:'WOOF WOOF!' },
 ];
 
+// Talk to Dad indoors (when nearer to him than Grandma)
+const HOUSE_DAD_LINES = [
+  { sp:'Dad', tx:'Next month I stacked two ridge hikes — MacLehose sections,\nbefore the humidity hits.' },
+  { sp:'Dad', tx:'Different pace than yours. Barcelona is the headline trip.' },
+  { sp:'Dad', tx:'I am over-the-moon happy for you, May.\nGo breathe that Mediterranean air.' },
+  { sp:'May', tx:'Send you trail pics if you send me tapas photos.' },
+];
+
 // Kerbside — leaving home triggers this (family + cab already outside)
 const CAB_FAREWELL_LINES = [
   { sp:'Grandma', tx:'The cab\'s waited. One more hug counts double.' },
@@ -378,13 +386,21 @@ const canvas=document.getElementById('c');
 const ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
 
-/** Standalone dialogue portraits (96×96 framed area in dialog box): Grandma, Gary, May. */
+/** Standalone dialogue portraits (96×96 framed area in dialog box). */
 const DIALOG_GRANDMA_PORTRAIT=new Image();
 DIALOG_GRANDMA_PORTRAIT.src='assets/grandmapreview.png';
 const DIALOG_GARY_PORTRAIT=new Image();
 DIALOG_GARY_PORTRAIT.src='assets/gary.png';
 const DIALOG_MAY_PORTRAIT=new Image();
 DIALOG_MAY_PORTRAIT.src='assets/may.png';
+const DIALOG_WING_PORTRAIT=new Image();
+DIALOG_WING_PORTRAIT.src='assets/wing.png';
+const DIALOG_SADONNA_PORTRAIT=new Image();
+DIALOG_SADONNA_PORTRAIT.src='assets/sadonna.png';
+const DIALOG_KOBE_PORTRAIT=new Image();
+DIALOG_KOBE_PORTRAIT.src='assets/kobe.png';
+const DIALOG_DAD_PORTRAIT=new Image();
+DIALOG_DAD_PORTRAIT.src='assets/dad.png';
 
 window.addEventListener('keydown',e=>{
   G.keys[e.key]=true;
@@ -2457,9 +2473,11 @@ function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,f
   hb.addColorStop(1,'rgba(28,20,26,0.75)');
   ctx.fillStyle=hb; ctx.fillRect(0,RY+RH+8,W,H-(RY+RH+8));
   ctx.fillStyle='rgba(180,160,120,0.6)';ctx.font='10px monospace';ctx.textAlign='center';
-  const hprompt=!isJo&&G.hasBoarding&&!G.farewellDone
-    ? 'Stand near Grandma — SPACE to talk    ↓ south: exit'
-    : 'ENTER: talk   ↓ walk south to exit';
+  let hprompt='ENTER: talk   ↓ walk south to exit';
+  if(!isJo){
+    if(G.hasBoarding&&!G.farewellDone) hprompt='Stand near Grandma — SPACE to talk    ↓ south: exit';
+    else hprompt='SPACE near Grandma or Dad — talk    ↓ south: exit';
+  }
   ctx.fillText(hprompt,W/2,RY+RH+38);ctx.textAlign='left';
 }
 
@@ -2842,6 +2860,10 @@ function drawDialog(lines,speaker=''){
   if(nl==='grandma') portraitImg=DIALOG_GRANDMA_PORTRAIT;
   else if(nl==='gary') portraitImg=DIALOG_GARY_PORTRAIT;
   else if(nl==='may') portraitImg=DIALOG_MAY_PORTRAIT;
+  else if(nl==='wing') portraitImg=DIALOG_WING_PORTRAIT;
+  else if(nl==='sadonna') portraitImg=DIALOG_SADONNA_PORTRAIT;
+  else if(nl==='kobe') portraitImg=DIALOG_KOBE_PORTRAIT;
+  else if(nl==='dad') portraitImg=DIALOG_DAD_PORTRAIT;
   const PW=96, PH=96;
 
   r(bx-3,by-3,bw+6,bh+6,C.uiB);
@@ -3946,12 +3968,19 @@ function loop(ts){
         if(sd<90){G.aBtn=false;G.mode='INDOOR_TALK';G.indNpcLine=0;G.indNpcWho='couple';G.cooldown=1.0;}
       } else if(G.indLoc==='house'){
         const gxN=256, gyN=216;
-        const nearGrandma=Math.hypot(G.indX-gxN,G.indY-gyN)<102;
+        const fxN=440, fyN=212;
+        const dG=Math.hypot(G.indX-gxN,G.indY-gyN);
+        const dD=Math.hypot(G.indX-fxN,G.indY-fyN);
+        const nearGrandma=dG<102;
+        const nearDad=dD<100;
         if(G.hasBoarding&&!G.farewellDone&&!nearGrandma) G.aBtn=false;
         else {
           G.aBtn=false;G.mode='INDOOR_TALK';G.indNpcLine=0;
-          G.indNpcWho=(G.hasBoarding&&!G.farewellDone)?'house_boarding_sendoff':(G.farewellDone?'house_revisit':'house_browse');
-          if(G.indNpcWho==='house_boarding_sendoff'){G.sendoffDadWalk=0;G.sendoffDoWalk=0;}
+          if(G.hasBoarding&&!G.farewellDone){
+            G.indNpcWho='house_boarding_sendoff';
+            G.sendoffDadWalk=0;G.sendoffDoWalk=0;
+          } else if(nearDad&&(!nearGrandma||dD<=dG)) G.indNpcWho='house_dad';
+          else G.indNpcWho=G.farewellDone?'house_revisit':'house_browse';
           G.cooldown=1.0;
         }
       } else if(G.indLoc==='jo_house'){
@@ -4018,6 +4047,7 @@ function loop(ts){
         {sp:'May',     tx:"Grandma, I'm literally the same."},
         {sp:'Grandma', tx:'You are DIFFERENT. I can see it!'},
       ],
+      house_dad:HOUSE_DAD_LINES,
       house_boarding_sendoff:HOUSE_BOARDING_SENDOFF_LINES,
       house_revisit:[
         {sp:'Grandma', tx:'Back already? The kettle\'s still warm.'},
