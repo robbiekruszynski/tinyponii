@@ -1245,7 +1245,11 @@ function drawExtTile(col,row){
   }
 }
 
-function drawSunsetSky(){
+// opts.skyOnly: gradient + sun + rays + clouds only (no baked mountains/skyline/harbour).
+// Use when parallax draws the sole horizon — avoids double-stacked city silhouettes (title screen).
+function drawSunsetSky(opts){
+  opts=opts||{};
+  const skyOnly=!!opts.skyOnly;
   const t=G.tick;
   const ph=Math.sin(t*0.0006)*0.5+0.5;
 
@@ -1287,6 +1291,7 @@ function drawSunsetSky(){
   }
   ctx.restore();
 
+  if(!skyOnly){
   // Far mountains — shifted up so more skyline reads against the northern sky
   const may=H*0.50;
   ctx.save(); ctx.globalAlpha=0.55;
@@ -1337,6 +1342,17 @@ function drawSunsetSky(){
   for(let sl=0;sl<7;sl++){const sy2=hary+sl*11;const sx2=((t*0.055+sl*75)%(W+110))-55;ctx.beginPath();ctx.moveTo(sx2,sy2);ctx.lineTo(sx2+55,sy2);ctx.stroke();}
   ctx.restore();
 
+  } else {
+  // One continuous dusk wash under the gradient — parallax layers sit on this (no second skyline from sky2/mountains)
+  const wash=ctx.createLinearGradient(0,skyBand-90,0,H);
+  wash.addColorStop(0,'rgba(52,34,38,0)');
+  wash.addColorStop(0.22,'rgba(44,28,36,0.28)');
+  wash.addColorStop(0.55,'rgba(28,20,34,0.72)');
+  wash.addColorStop(1,'rgba(10,10,20,1)');
+  ctx.fillStyle=wash;
+  ctx.fillRect(0,skyBand-110,W,H-(skyBand-110)+8);
+  }
+
   // Clouds — bigger and more visible
   ctx.save();
   for(const cs of [
@@ -1356,12 +1372,14 @@ function drawSunsetSky(){
 
 // ── PARALLAX BACKGROUND: 3 depth layers between sky and foreground ──
 // Scrolls at fractional speeds relative to camera for depth illusion
-function drawParallaxBg(){
+function drawParallaxBg(opts){
+  opts=opts||{};
+  const hb=opts.horizonBoost|0;
   const t=G.tick;
   const phase=Math.sin(t*0.0006)*0.5+0.5;
 
   // Horizon Y — higher on screen → more parallax city reads above the tile field
-  const horizY=Math.min(Math.floor(H*0.30), Math.max(5,-Math.floor(G.camY*0.35)+42));
+  const horizY=Math.min(Math.floor(H*0.30), Math.max(5,-Math.floor(G.camY*0.35)+42))+hb;
 
   // ══ LAYER 1: Distant mountains (slowest parallax, 0.08× camera speed) ══
   const mx=-(G.camX*0.08);
@@ -2440,33 +2458,44 @@ function drawYesNo(sel){
 // 8. BATTLE SCREEN  — Kobe Attack System
 // ============================================================
 // Naked Man battle: same sky + parallax city as explore mode (no tile map), full-screen dusk film + rain
-function drawBattleRainBackdrop(fr){
+// opts.titleScreen: no rain, skyline sits lower (sky dominates top), lighter grade for readability
+function drawBattleRainBackdrop(fr, opts){
+  opts=opts||{};
+  const title=!!opts.titleScreen;
   const ox=G.camX, oy=G.camY;
   G.camX=Math.max(0, Math.min(23*TILE+32-W/2, (ECOLS-20)*TILE));
   G.camY=Math.max(0, Math.min(5*TILE, (EROWS-15)*TILE));
-  drawSunsetSky();
-  drawParallaxBg();
+  drawSunsetSky(title?{skyOnly:true}:undefined);
+  drawParallaxBg(title?{horizonBoost:Math.floor(H*0.26)}:undefined);
   G.camX=ox; G.camY=oy;
 
-  // Uniform cinematic darken — covers entire vista (no diagonal "cave" wedge)
-  ctx.fillStyle='rgba(14,16,24,0.78)';
-  ctx.fillRect(0,0,W,H);
-  ctx.fillStyle='rgba(6,8,14,0.35)';
-  ctx.fillRect(0,0,W,H);
+  if(title){
+    ctx.fillStyle='rgba(255,236,215,0.085)';
+    ctx.fillRect(0,0,W,Math.floor(H*0.52));
+    ctx.fillStyle='rgba(14,18,32,0.38)';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='rgba(255,248,235,0.045)';
+    ctx.fillRect(0,0,W,H);
+  } else {
+    ctx.fillStyle='rgba(14,16,24,0.78)';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='rgba(6,8,14,0.35)';
+    ctx.fillRect(0,0,W,H);
 
-  ctx.strokeStyle='rgba(215,225,240,0.22)';
-  ctx.lineWidth=1;
-  const t=fr*6;
-  for(let i=0;i<140;i++){
-    const ix=(i*317+t+i*i)%W;
-    const iy=(i*149+t*2+i*7)%H;
-    ctx.beginPath(); ctx.moveTo(ix,iy); ctx.lineTo(ix-5,iy+15); ctx.stroke();
-  }
-  ctx.strokeStyle='rgba(255,255,255,0.06)';
-  for(let i=0;i<55;i++){
-    const ix=(i*401+fr*8)%W;
-    const iy=(fr*5+i*23)%H;
-    ctx.beginPath(); ctx.moveTo(ix,iy); ctx.lineTo(ix-2,iy+18); ctx.stroke();
+    ctx.strokeStyle='rgba(215,225,240,0.22)';
+    ctx.lineWidth=1;
+    const t=fr*6;
+    for(let i=0;i<140;i++){
+      const ix=(i*317+t+i*i)%W;
+      const iy=(i*149+t*2+i*7)%H;
+      ctx.beginPath(); ctx.moveTo(ix,iy); ctx.lineTo(ix-5,iy+15); ctx.stroke();
+    }
+    ctx.strokeStyle='rgba(255,255,255,0.06)';
+    for(let i=0;i<55;i++){
+      const ix=(i*401+fr*8)%W;
+      const iy=(fr*5+i*23)%H;
+      ctx.beginPath(); ctx.moveTo(ix,iy); ctx.lineTo(ix-2,iy+18); ctx.stroke();
+    }
   }
 }
 
@@ -2631,7 +2660,7 @@ function drawBattle(){
 // 9. CUTSCENE & ENDING DRAWINGS
 // ============================================================
 
-// INTRO: bedroom scene
+// INTRO: bedroom scene — window shows same dusk + rain vista as naked-man battle
 function drawIntroBedroom(){
   // Floor (wood planks)
   r(0,0,W,H,'#8a6030');
@@ -2639,18 +2668,14 @@ function drawIntroBedroom(){
   // Walls
   r(0,0,W,120,'#d4cec4');
   r(0,112,W,8,'#a09890');
-  // Window left — HK skyline
   const wx=40,wy=16,ww=150,wh=88;
-  r(wx,wy,ww,wh,'#8ab0c8'); // hazy HK sky
-  // Skyline (tightly packed building silhouettes from 27F)
-  const blds=[[wx,wy+40,12,48],[wx+10,wy+50,10,38],[wx+18,wy+30,8,58],
-               [wx+24,wy+45,14,43],[wx+36,wy+25,10,63],[wx+44,wy+38,12,50],
-               [wx+54,wy+20,8,68],[wx+60,wy+35,16,53],[wx+74,wy+28,10,60],
-               [wx+82,wy+42,8,46],[wx+88,wy+18,14,70],[wx+100,wy+32,10,56],
-               [wx+108,wy+48,12,40],[wx+118,wy+22,8,66],[wx+124,wy+38,18,50],
-               [wx+140,wy+15,12,73]];
-  for(const[bx,by,bw,bh]of blds){r(bx,by,bw,bh,'#4a5868');}
-  // Window frame
+  ctx.save();
+  ctx.beginPath();ctx.rect(wx,wy,ww,wh);ctx.clip();
+  ctx.translate(wx,wy);ctx.scale(ww/W,wh/H);
+  drawBattleRainBackdrop(G.tick);
+  ctx.restore();
+  // Slight glass reflection / dusk tint on pane
+  r(wx,wy,ww,wh,'rgba(220,215,200,0.08)');
   ctx.strokeStyle='#c0b090';ctx.lineWidth=4;ctx.strokeRect(wx,wy,ww,wh);
   r(wx+ww/2-2,wy,4,wh,'#c0b090'); r(wx,wy+wh/2-2,ww,4,'#c0b090');
   // Bed (right side)
@@ -2971,11 +2996,11 @@ function drawCredits(){
   ctx.textAlign='left';ctx.restore();
 }
 
-// TITLE SCREEN
+// TITLE SCREEN — same vista as battle, but no rain + skyline lower + brighter grade
 function drawTitle(){
-  r(0,0,W,H,'#0f0f1a');
-  ctx.fillStyle='rgba(255,255,200,0.4)';
-  for(let i=0;i<60;i++){const sx=(i*137+73)%W,sy=(i*89+41)%H;r(sx,sy,i%5<1?2:1,i%5<1?2:1,'rgba(255,255,200,0.5)');}
+  drawBattleRainBackdrop(G.tick,{titleScreen:true});
+  ctx.fillStyle='rgba(18,22,38,0.22)';
+  ctx.fillRect(0,0,W,H);
   r(W/2-200,H/2-110,400,44,C.uiB); r(W/2-198,H/2-108,396,40,C.uiBg);
   ctx.fillStyle=C.gold;ctx.font='bold 22px monospace';ctx.textAlign='center';
   ctx.fillText('MAY & KOBE: HONG KONG',W/2,H/2-83);
