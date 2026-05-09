@@ -285,7 +285,11 @@ function canStepCave(x,y){
   return pts.every(([px,py])=>CAVE_WALK.has(caveTile(Math.floor(px/TILE),Math.floor(py/TILE))));
 }
 function canStepInd(x,y){
-  return x>=40&&x+18<=600&&y>=50&&y+22<=380;
+  const house=G.indLoc==='house';
+  const RX=house?160:180, RY=house?80:100, RW=house?320:280;
+  const pts=[[x+2,y+2],[x+16,y+2],[x+2,y+20],[x+16,y+20]];
+  const maxPy=house?340:325;
+  return pts.every(([px,py])=>px>=RX+10&&px<=RX+RW-30&&py>=RY+20&&py<=maxPy);
 }
 
 // ============================================================
@@ -531,7 +535,10 @@ function drawNaked(ox,oy,tick=0){
 
 // NPC: Gary — casual male, looking at phone
 function drawGary(ox,oy){
-  const x=Math.floor(ox),y=Math.floor(oy);
+  const x=Math.floor(ox), y=Math.floor(oy);
+  ctx.save();
+  const px=x+11, py=y+21;
+  ctx.translate(px,py); ctx.scale(1.18,1.18); ctx.translate(-px,-py);
   r(x+6,y+26,5,6,'#1a1830'); r(x+13,y+26,5,6,'#1a1830');
   r(x+5,y+13,14,14,'#3a5a3a'); // jacket
   r(x+2,y+14,4,8,'#3a5a3a'); r(x+18,y+14,4,8,C.skin);
@@ -541,6 +548,7 @@ function drawGary(ox,oy){
   r(x+6,y+1,12,4,'#282820');
   r(x+8,y+7,2,2,C.black); r(x+13,y+7,2,2,C.black);
   r(x+10,y+10,4,1,'#6a4020');
+  ctx.restore();
 }
 
 // NPC: Grandmother — short, bucket hat, older
@@ -632,9 +640,51 @@ function drawWing(ox,oy,tick=0){
   r(x+8,y+10,2,1,'#c87050'); r(x+14,y+10,2,1,'#c87050');
 }
 
+// Standing café customer — same proportions / footprint as Wing (behind-counter scale)
+function drawCafeGuestFront(ox,oy,tick,shirt,pants,skin){
+  const x=Math.floor(ox),y=Math.floor(oy),bob=Math.floor(tick/12)%2,HR='#0a0a0a';
+  const SK=skin===undefined?'#d4b86a':skin;
+  r(x+5,y+22,6,8,pants); r(x+13,y+22,6,8,pants);
+  r(x+5,y+13,14,10,shirt);
+  r(x+2,y+14,4,8+bob,shirt); r(x+18,y+14-bob,4,8,shirt);
+  r(x+10,y+9,4,4,SK);
+  r(x+7,y+2,10,9,SK);
+  r(x+6,y,12,4,HR); r(x+6,y+3,3,4,HR); r(x+15,y+3,3,4,HR);
+  r(x+8,y+6,2,2,HR); r(x+13,y+6,2,2,HR);
+  r(x+9,y+9,6,1,'#c87050'); r(x+8,y+10,2,1,'#c87050'); r(x+14,y+10,2,1,'#c87050');
+}
+
+// Light blouse guest — same scale as Sodonna (single torso block)
+function drawCafeGuestBlouse(ox,oy,tick,shirtLight){
+  const x=Math.floor(ox),y=Math.floor(oy),bob=Math.floor(tick/14)%2,SK='#d4b870',HR='#141018';
+  r(x+5,y+13,14,14,shirtLight);
+  r(x+2,y+14+bob,4,8,SK); r(x+18,y+14-bob,4,8,SK);
+  r(x+10,y+9,4,4,SK);
+  r(x+7,y+2,10,9,SK);
+  r(x+5,y,14,5,HR); r(x+4,y+4,4,7,HR); r(x+16,y+4,4,7,HR);
+  r(x+6,y+9,12,2,HR);
+  r(x+8,y+6,2,2,'#3a3848'); r(x+13,y+6,2,2,'#3a3848');
+  r(x+9,y+9,6,1,'#c05858');
+}
+
+// Seated at counter height — Wing-sized but shortened for stools
+function drawCafeGuestOnStool(ox,oy,tick,shirt){
+  const x=Math.floor(ox),y=Math.floor(oy),bob=Math.floor(tick/11)%2,SK='#d4b068',HR='#181018';
+  r(x+6,y+20,5,9,'#242848'); r(x+13,y+20,5,9,'#242848');
+  r(x+5,y+10,14,11,shirt);
+  r(x+2,y+11,4,10+bob,shirt); r(x+18,y+11-bob,4,10,shirt);
+  r(x+10,y+6,4,4,SK);
+  r(x+7,y-1,10,9,SK);
+  r(x+6,y-4,12,5,HR); r(x+6,y-1,3,5,HR); r(x+15,y-1,3,5,HR);
+  r(x+8,y+4,2,2,HR); r(x+13,y+4,2,2,HR);
+}
+
 // NPC: Gate Agent
 function drawGateAgent(ox,oy){
   const x=Math.floor(ox),y=Math.floor(oy);
+  ctx.save();
+  const px=x+11, py=y+21;
+  ctx.translate(px,py); ctx.scale(1.14,1.14); ctx.translate(-px,-py);
   r(x+5,y+26,6,6,'#1a1830'); r(x+13,y+26,6,6,'#1a1830');
   r(x+5,y+12,14,15,'#2a3868'); // uniform
   r(x+11,y+13,2,11,C.white); // shirt stripe
@@ -647,6 +697,7 @@ function drawGateAgent(ox,oy){
   r(x+9,y+9,6,1,'#704030');
   // Badge
   r(x+16,y+16,6,4,'#d0c040');
+  ctx.restore();
 }
 
 // Heart shape
@@ -745,18 +796,12 @@ function drawExtTile(col,row){
       break;
 
     case T_WATER: {
-      // Rich water — animated, clearly a lake/river
+      // Harbour water — static highlights (no scrolling shimmer / flash)
       r(sx,sy,TILE,TILE,'#1e4878');
       r(sx,sy,TILE,TILE,'rgba(40,100,180,0.6)');
-      // Animated shimmer waves
-      const wv=Math.floor(tk/16)%TILE;
-      r(sx,sy+(wv%TILE),TILE,2,'rgba(90,160,220,0.5)');
-      r(sx,sy+((wv+12)%TILE),TILE,1,'rgba(140,200,240,0.35)');
-      // Surface highlights
-      r(sx+4,sy+5,TILE-8,3,'rgba(120,190,255,0.45)');
-      r(sx+6,sy+17,TILE-12,2,'rgba(160,210,255,0.3)');
-      r(sx+2,sy+25,TILE-4,2,'rgba(80,140,200,0.3)');
-      // Subtle sunset wash — static, no blinking
+      r(sx+4,sy+7,TILE-8,3,'rgba(100,170,230,0.28)');
+      r(sx+6,sy+18,TILE-12,2,'rgba(140,200,250,0.22)');
+      r(sx+2,sy+24,TILE-4,2,'rgba(70,130,200,0.22)');
       r(sx,sy,TILE,TILE,'rgba(200,100,30,0.06)');
       break;
     }
@@ -1015,7 +1060,7 @@ function drawSunsetSky(){
   const ph=Math.sin(t*0.0006)*0.5+0.5;
 
   // Northern sky band + deep void below — full-width sunset only reads from the top
-  const skyBand=Math.floor(H*0.58);
+  const skyBand=Math.floor(H*0.64);
   const sky=ctx.createLinearGradient(0,0,0,skyBand);
   sky.addColorStop(0.00,`rgb(${18+Math.floor(ph*10)},10,${50+Math.floor(ph*20)})`);
   sky.addColorStop(0.18,`rgb(${55+Math.floor(ph*25)},22,${80+Math.floor(ph*20)})`);
@@ -1126,7 +1171,7 @@ function drawParallaxBg(){
   const phase=Math.sin(t*0.0006)*0.5+0.5;
 
   // Horizon Y — higher on screen → more parallax city reads above the tile field
-  const horizY=Math.min(Math.floor(H*0.33), Math.max(6,-Math.floor(G.camY*0.35)+44));
+  const horizY=Math.min(Math.floor(H*0.30), Math.max(5,-Math.floor(G.camY*0.35)+42));
 
   // ══ LAYER 1: Distant mountains (slowest parallax, 0.08× camera speed) ══
   const mx=-(G.camX*0.08);
@@ -1168,7 +1213,7 @@ function drawParallaxBg(){
 
   // ══ LAYER 2: Mid-distance blurred city (0.25× camera speed) ══
   const bx2=-(G.camX*0.25);
-  const cityY=horizY+20;
+  const cityY=horizY+16;
   const cityBlds=[
     [10,65,24],[34,42,18],[52,78,22],[74,50,20],[94,88,18],[112,35,24],
     [136,70,20],[156,55,18],[174,82,22],[196,45,20],[216,68,18],[234,92,16],
@@ -1177,7 +1222,7 @@ function drawParallaxBg(){
     [494,48,20],[514,72,18],[532,60,22],[554,80,18],[572,46,24],[596,74,20],
     [616,58,18],[634,82,22],[652,50,20],[672,66,18],[690,90,22],[712,44,20],[734,76,22],[756,52,20],[778,84,24],[802,48,22],[826,68,20],
   ];
-  ctx.save();ctx.globalAlpha=0.54;
+  ctx.save();ctx.globalAlpha=0.58;
   for(const [bbx,bbh,bbw] of cityBlds){
     const px=((bbx+bx2)%(W+300))-50;
     // Building face — very muted deep blue-purple
@@ -1208,7 +1253,7 @@ function drawParallaxBg(){
 
   // ══ LAYER 3: Near-background buildings (0.45× camera speed, more detail) ══
   const bx3=-(G.camX*0.45);
-  const nearY=horizY+30;
+  const nearY=horizY+26;
   const nearBlds=[
     [0,55,30],[30,38,22],[52,68,26],[78,45,24],[102,80,22],[124,52,28],
     [152,72,24],[176,60,22],[198,84,26],[224,48,24],[248,70,22],[270,58,28],
@@ -1218,7 +1263,7 @@ function drawParallaxBg(){
     [736,70,24],[760,60,22],[782,78,26],[808,44,24],[832,66,22],[856,54,28],
     [884,76,26],[918,48,24],[952,70,22],[986,54,26],
   ];
-  ctx.save();ctx.globalAlpha=0.72;
+  ctx.save();ctx.globalAlpha=0.78;
   for(const [bbx,bbh,bbw] of nearBlds){
     const px=((bbx+bx3)%(W+400))-80;
     ctx.fillStyle=`rgba(${22+Math.floor(bbx%18)},${18+Math.floor(bbh%12)},${44+Math.floor((bbx*bbh)%22)},1)`;
@@ -1295,56 +1340,27 @@ function drawParallaxBg(){
   ctx.restore();
 }
 
-// ── CITY PEDESTRIANS — NPCs walking the streets ──
-// World-scale character NPCs (same size as pedestrians)
+// ── CITY PEDESTRIANS — Wing-scale sprites on the streets ──
+// World-scale NPCs — match interior café sprite scale (Wing / Sodonna proportions)
 function drawGrandmaWorld(x,y,tick){
-  const b=Math.floor(tick/14)%2,sk='#d4a870',hr='#d8d0c8';
-  x=Math.floor(x);y=Math.floor(y);
-  r(x+1,y+17,10,2,'rgba(0,0,0,0.15)');
-  r(x+2,y+11,3,6+b,'#6a4030'); r(x+7,y+11,3,6-b,'#6a4030');
-  r(x+1,y+6,10,6,'#8a4848');
-  r(x-1,y+7,3,4,sk); r(x+10,y+7,3,4,sk);
-  r(x+2,y,8,7,sk);
-  r(x+2,y,8,3,hr); r(x+1,y+3,3,4,hr); r(x+8,y+3,3,4,hr);
-  // Bucket hat
-  r(x+0,y-3,12,3,'#6a7850'); r(x+2,y-6,8,4,'#5a6840');
-  npcNameTag(x,y,'Grandma','#f8e8c8');
+  const px=Math.floor(x)-6, py=Math.floor(y)-14;
+  drawGrandma(px,py);
+  npcNameTag(px+8,py+14,'Grandma','#f8e8c8');
 }
 function drawFatherWorld(x,y,tick){
-  const b=Math.floor(tick/10)%2,sk='#d4a870';
-  x=Math.floor(x);y=Math.floor(y);
-  r(x+1,y+17,10,2,'rgba(0,0,0,0.15)');
-  r(x+2,y+11,3,7+b,'#2a3050'); r(x+7,y+11,3,7-b,'#2a3050');
-  r(x+1,y+6,10,6,'#3a5a8a');
-  r(x-1,y+7,3,4,sk); r(x+10,y+7,3,4,sk);
-  r(x+2,y,8,7,sk);
-  r(x+2,y,8,4,'#181010'); r(x+1,y+3,2,4,'#181010'); r(x+9,y+3,2,4,'#181010');
-  r(x+3,y+5,2,2,'#1a1010'); r(x+7,y+5,2,2,'#1a1010');
-  npcNameTag(x,y,'Father','#c8e0f8');
+  const px=Math.floor(x)-6, py=Math.floor(y)-14;
+  drawFather(px,py);
+  npcNameTag(px+8,py+14,'Father','#c8e0f8');
 }
 function drawSadonnaWorld(x,y,tick){
-  const b=Math.floor(tick/10)%2,sk='#d4b86a';
-  x=Math.floor(x);y=Math.floor(y);
-  r(x+1,y+17,10,2,'rgba(0,0,0,0.15)');
-  r(x+2,y+11,3,6+b,'#2a2a2a'); r(x+7,y+11,3,6-b,'#2a2a2a');
-  r(x+1,y+6,10,6,'#f0f0f0');
-  r(x-1,y+7,3,4,sk); r(x+10,y+7,3,4,sk);
-  r(x+2,y,8,7,sk);
-  r(x+2,y,8,4,'#0a0a0a'); r(x+1,y+3,3,5,'#0a0a0a'); r(x+8,y+3,3,5,'#0a0a0a');
-  r(x+3,y+5,2,2,'#0a0a0a'); r(x+7,y+5,2,2,'#0a0a0a');
-  npcNameTag(x,y,'Sodonna','#f0f0f0');
+  const px=Math.floor(x)-6, py=Math.floor(y)-14;
+  drawSadonna(px,py);
+  npcNameTag(px+8,py+14,'Sodonna','#f0f0f0');
 }
 function drawWingWorld(x,y,tick){
-  const b=Math.floor(tick/10)%2,sk='#d4b86a';
-  x=Math.floor(x);y=Math.floor(y);
-  r(x+1,y+17,10,2,'rgba(0,0,0,0.15)');
-  r(x+2,y+11,3,7+b,'#2a3050'); r(x+7,y+11,3,7-b,'#2a3050');
-  r(x+1,y+6,10,6,'#3a5a3a');
-  r(x-1,y+7,3,4,sk); r(x+10,y+7,3,4,sk);
-  r(x+2,y,8,7,sk);
-  r(x+2,y,8,4,'#0a0a0a'); r(x+1,y+3,2,4,'#0a0a0a'); r(x+9,y+3,2,4,'#0a0a0a');
-  r(x+3,y+5,2,2,'#0a0a0a'); r(x+7,y+5,2,2,'#0a0a0a');
-  npcNameTag(x,y,'Wing','#c8d8f0');
+  const px=Math.floor(x)-6, py=Math.floor(y)-14;
+  drawWing(px,py,tick);
+  npcNameTag(px+8,py+14,'Wing','#c8d8f0');
 }
 
 function drawCityNPCs(){
@@ -1390,27 +1406,13 @@ function drawCityNPCs(){
       wy=w.dir==='down' ? sY4+pg4 : sY4+(rH4-pg4);
     }
     const sx=wx-G.camX, sy=wy-G.camY;
-    if(sx<-32||sx>W+32||sy<-32||sy>H+32) continue;
+    if(sx<-52||sx>W+52||sy<-52||sy>H+52) continue;
     drawPedestrian(sx,sy,w.skin,w.shirt,t+w.phase);
   }
 }
 
-function drawPedestrian(x,y,skin,shirt,tick,bobPeriod){
-  const bp=bobPeriod===undefined?8:bobPeriod;
-  const bob=Math.floor(tick/bp)%2;
-  x=Math.floor(x); y=Math.floor(y);
-  // Shadow
-  r(x+1,y+17,10,2,'rgba(0,0,0,0.15)');
-  // Legs
-  r(x+2,y+11,3,6+bob,'#2a2020'); r(x+7,y+11,3,6-bob,'#2a2020');
-  // Body
-  r(x+1,y+6,10,6,shirt);
-  // Arms
-  r(x-1,y+7,3,4,skin); r(x+10,y+7,3,4,skin);
-  // Head
-  r(x+2,y,8,7,skin);
-  // Hair
-  r(x+2,y,8,3,'#1a1010');
+function drawPedestrian(x,y,skin,shirt,tick){
+  drawCafeGuestFront(Math.floor(x),Math.floor(y),tick,shirt,'#282830',skin);
 }
 
 function drawNoTitleCafeWindowOverlay(){
@@ -1485,13 +1487,7 @@ function drawCityOverlay(){
     hcar(r13R-((t*0.6)%r13w),         r13wyB,'#2848a8','left');
   }
 
-  // ── NEON SIGNS ──
-  const nsx=16*TILE-G.camX, nsy=2*TILE-G.camY;
-  if(nsx>-60&&nsx<W&&nsy>-20&&nsy<H&&Math.floor(t/8)%3!==0){
-    r(nsx,nsy,48,16,'rgba(200,30,60,0.85)');
-    ctx.fillStyle='#ffb0b0';ctx.font='bold 9px monospace';ctx.textAlign='center';
-    ctx.fillText('香港',nsx+24,nsy+12);ctx.textAlign='left';
-  }
+  // ── NEON SIGNS (city-side only — no blink tile over water col 16) ──
   const ns2x=12*TILE-G.camX, ns2y=6*TILE-G.camY;
   if(ns2x>-60&&ns2x<W&&ns2y>-20&&ns2y<H&&Math.floor(t/11)%4!==0){
     r(ns2x,ns2y,56,14,'rgba(20,80,200,0.75)');
@@ -1553,7 +1549,7 @@ function drawExtNPCs(){
   }
   // Gary sitting outside
   const gx=NPC_GARY.wx-G.camX, gy=NPC_GARY.wy-G.camY;
-  if(gx>-32&&gx<W&&gy>-32&&gy<H){
+  if(gx>-48&&gx<W+16&&gy>-48&&gy<H+16){
     drawGary(gx,gy);
     npcNameTag(gx+2,gy,'Gary','#c8e8c8');
   }
@@ -1646,8 +1642,9 @@ function drawCaveMap(){
 // INTERIOR SCENES  (house + cafe — no tile maps, just art)
 // ============================================================
 function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,fwFY,handPause){
-  // Full canvas dark surround — the room is a tight box in the center
-  r(0,0,W,H,'#0e0a08');
+  const hg=ctx.createRadialGradient(W*0.48,H*0.45,70,W*0.52,H*0.58,430);
+  hg.addColorStop(0,'#0a0608'); hg.addColorStop(0.5,'#161016'); hg.addColorStop(1,'#281c28');
+  ctx.fillStyle=hg; ctx.fillRect(0,0,W,H);
 
   // Room box — small and cozy
   const RX=160, RY=80, RW=320, RH=200;
@@ -1669,10 +1666,32 @@ function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,f
   // South sill
   r(RX,RY+RH,RW,16,'#4a1408');
 
-  // Window — north wall
-  r(RX+55,RY-26,48,24,'#9ab8d8');
-  r(RX+55,RY-26,48,24,'rgba(240,180,80,0.2)');
-  r(RX+78,RY-26,2,24,'#7a3010'); r(RX+55,RY-15,48,2,'#7a3010');
+  // Window — north wall (wider sunset slice over city silhouette)
+  (function drawHouseWindowView(){
+    const WVX=RX+42, WVY=RY-28, WVW=90, WVH=30;
+    ctx.save(); ctx.beginPath(); ctx.rect(WVX,WVY,WVW,WVH); ctx.clip();
+    const ph=(Math.sin(tick*0.0006)*0.5+0.5);
+    const wg=ctx.createLinearGradient(WVX,WVY,WVX,WVY+WVH);
+    wg.addColorStop(0,`rgb(${118+Math.floor(ph*26)},${136},${200})`);
+    wg.addColorStop(0.5,`rgb(${212},${112+Math.floor(ph*28)},${54})`);
+    wg.addColorStop(1,'rgb(48,32,44)');
+    ctx.fillStyle=wg; ctx.fillRect(WVX-2,WVY-2,WVW+4,WVH+4);
+    ctx.fillStyle='rgba(20,16,34,0.9)';
+    let bx=WVX-12;
+    while(bx<WVX+WVW+18){
+      const th=10+((Math.floor(bx*11)+tick)%27)%16;
+      ctx.fillRect(bx,WVY+WVH-th-4,13,th+6);
+      bx+=15;
+    }
+    ctx.globalAlpha=0.45;
+    ctx.fillStyle=`rgba(${252},${200+Math.floor(ph*36)},${88},0.45)`;
+    for(let i=0;i<9;i++)ctx.fillRect(WVX+4+i*9,WVY+WVH-16+(i%3)*4,4,5);
+    ctx.restore();
+    ctx.strokeStyle='#6a3018'; ctx.lineWidth=3;
+    ctx.strokeRect(WVX,WVY,WVW,WVH);
+    ctx.strokeStyle='rgba(255,240,200,0.2)'; ctx.lineWidth=1;
+    ctx.strokeRect(WVX+3,WVY+3,WVW-6,WVH-6);
+  })();
 
   // Kitchen — compact right section
   const KX=RX+RW-120, KY=RY;
@@ -1716,9 +1735,9 @@ function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,f
   const fyD = Math.max(RY+60, Math.min(fatherWy, RY+RH-50));
 
   drawRadiator(gxD-18,gyD+4);
-  drawGrandma(gxD,gyD);
-  drawFather(fxD,fyD);
-  drawWomanKitchen(KX+56,KY+32,handPause);
+  ctx.save(); ctx.translate(gxD,gyD); ctx.scale(1.12,1.12); drawGrandma(0,0); ctx.restore();
+  ctx.save(); ctx.translate(fxD,fyD); ctx.scale(1.12,1.12); drawFather(0,0); ctx.restore();
+  ctx.save(); ctx.translate(KX+56,KY+32); ctx.scale(1.12,1.12); drawWomanKitchen(0,0,handPause); ctx.restore();
 
   function npcLabel(x,y,name,col){
     const tw=ctx.measureText(name).width;
@@ -1734,7 +1753,7 @@ function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,f
   const miy=Math.min(Math.max(indY,RY+20),RY+RH-30);
   const mix=Math.min(Math.max(indX,RX+10),RX+RW-30);
   drawMay(mix,miy,tick,G.facing||'down');
-  drawKobe(mix-26,miy+4,tick,G.facing||'right');
+  drawKobe(mix-26,miy+4,tick,G.facing);
   npcLabel(mix,miy,'May','#f8e8d8');
   npcLabel(mix-26,miy+4,'Kobe','#d8c8a0');
 
@@ -1748,15 +1767,20 @@ function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,f
   r(RX+RW/2-12,RY+RH-2,24,7,C.houseDark);
   r(RX+RW/2-10,RY+RH,20,5,'#f8c080');
 
-  // Dark band below room with prompt
-  r(0,RY+RH+16,W,H-(RY+RH+16),'#0e0a08');
+  // Soft band below room with prompt (let outer dusk show through)
+  const hb=ctx.createLinearGradient(0,RY+RH+10,0,H);
+  hb.addColorStop(0,'rgba(14,10,12,0.9)');
+  hb.addColorStop(1,'rgba(28,20,26,0.75)');
+  ctx.fillStyle=hb; ctx.fillRect(0,RY+RH+8,W,H-(RY+RH+8));
   ctx.fillStyle='rgba(180,160,120,0.6)';ctx.font='10px monospace';ctx.textAlign='center';
   ctx.fillText('ENTER: talk   ↓ walk south to exit',W/2,RY+RH+38);ctx.textAlign='left';
 }
 
 function drawCafeInterior(indX,indY,tick){
-  // Full canvas dark surround — tiny shop box
-  r(0,0,W,H,'#0a0a0a');
+  // Keep dusk city ambience visible outside the shop silhouette (lighter vignette)
+  const vignette=ctx.createRadialGradient(W*0.5,H*0.42,60,W*0.52,H*0.55,Math.max(W,H)*0.78);
+  vignette.addColorStop(0,'#070708'); vignette.addColorStop(0.42,'#121018'); vignette.addColorStop(0.72,'#201829'); vignette.addColorStop(1,'#382848');
+  ctx.fillStyle=vignette; ctx.fillRect(0,0,W,H);
 
   // Shop box — narrow and shallow, very small
   const RX=180, RY=100, RW=280, RH=180;
@@ -1773,7 +1797,6 @@ function drawCafeInterior(indX,indY,tick){
   for(let fx=RX;fx<RX+RW;fx+=24) r(fx,RY,1,RH,'#d0d0d0');
 
   // ── NORTH WALL SIGNAGE — visible inside room ──
-  // Black header bar on back wall
   r(RX,RY,RW,22,'#1a1a1a');
   // "NO TITLE" text — white on black bar
   ctx.fillStyle='#ffffff';ctx.font='bold 13px monospace';ctx.textAlign='left';
@@ -1816,8 +1839,8 @@ function drawCafeInterior(indX,indY,tick){
   // Music note
   ctx.fillStyle='rgba(0,0,0,0.07)';ctx.font='22px monospace';ctx.fillText('\u266a',RX+RW-30,RY+RH-20);
 
-  // Coffee-shop patrons — slow eased paths + dwells (not frantic diagonal roaming)
-  const roamL=CX+CW+28, roamR=RX+RW-26;
+  // Coffee-shop patrons — Wing/Sodonna-sized sprites (slow eased paths + dwells)
+  const roamL=CX+CW+28, roamR=RX+RW-68;
   const smooth=t=>{const x=Math.max(0,Math.min(1,t));return x*x*(3-2*x);};
   function shuttle(ph,period,a,b,dwell){
     const d=dwell===undefined?0.27:dwell,m=Math.max(1e-6,1-2*d);
@@ -1826,25 +1849,37 @@ function drawCafeInterior(indX,indY,tick){
     if(u>d+m)return b;
     return a+(b-a)*smooth((u-d)/m);
   }
-  // (1) Seated by the small table — sipping / typing micro-motions only
-  drawPedestrian(
-    Math.floor(TAX+16+Math.sin(tick*0.009)*2),
-    Math.floor(TAY+42+Math.sin(tick*0.007)*2),
-    '#d4a870','#584878',Math.floor(tick*0.28),52);
-  // (2) Slow stroll along the seating wall (east ↔ west, pauses at ends)
-  drawPedestrian(
-    Math.floor(shuttle(0,7800,roamL+10,roamR-24)),
-    Math.floor(RY+146+Math.sin(tick*0.004)*5),
-    '#c8b070','#387058',tick,20);
-  // (3) Short queue / pickup shuffle near stools — north ↔ south amble
-  drawPedestrian(
-    Math.floor(CX+CW+36+Math.sin(tick*0.0033)*7),
-    Math.floor(shuttle(2200,8200,RY+128,RY+164)),
-    '#d4b060','#884858',tick,19);
+  function cafeGuestShadow(gx,gy){ r(gx+3,gy+29,18,4,'rgba(0,0,0,0.16)'); }
 
-  // Sodonna & Wing — fixed at counter on floor tiles (CY−14 sat in the dark ceiling band)
-  const sodX=CX+16, sodY=RY+38;
-  const wingX=CX+52, wingY=sodY;
+  // Counter stools — two regulars (same scale as staff)
+  cafeGuestShadow(CX+CW+12,CY+8); drawCafeGuestOnStool(CX+CW+12,CY+8,tick,'#5a5088');
+  cafeGuestShadow(CX+CW+34,CY+10); drawCafeGuestOnStool(CX+CW+34,CY+10,tick,'#684838');
+
+  // East-wall standing reader / waiter shuffle
+  cafeGuestShadow(RX+RW-102,RY+112);
+  drawCafeGuestFront(RX+RW-102,RY+112,tick,'#486078','#1e2038');
+
+  // Small table — two seated guests (blouse + jacket)
+  cafeGuestShadow(TAX+4,TAY+22); drawCafeGuestBlouse(TAX+4,TAY+22,tick,'#e2e8f8');
+  cafeGuestShadow(TAX+36,TAY+22); drawCafeGuestFront(TAX+36,TAY+22,tick,'#4a5878','#282838');
+
+  // Slow wall stroll east ↔ west
+  const strollX=Math.floor(shuttle(800,9200,roamL+6,roamR-8));
+  cafeGuestShadow(strollX,RY+130);
+  drawCafeGuestFront(strollX,RY+130,tick,'#405848','#242828');
+
+  // Queue drift near pickup zone
+  const queueY=Math.floor(shuttle(2600,8800,RY+124,RY+158));
+  cafeGuestShadow(CX+CW+38,queueY);
+  drawCafeGuestBlouse(CX+CW+38,queueY,tick,'#f0e8f0');
+
+  // Quiet corner (east wall)
+  cafeGuestShadow(RX+RW-96,RY+138);
+  drawCafeGuestFront(RX+RW-96,RY+138,tick,'#586058','#282818');
+
+  // Sodonna & Wing — spaced along counter so name plates don't overlap
+  const sodX=CX+6, sodY=RY+38;
+  const wingX=CX+74, wingY=sodY;
   r(sodX+3,sodY+29,18,4,'rgba(0,0,0,0.18)');
   r(wingX+3,wingY+29,18,4,'rgba(0,0,0,0.18)');
   drawSadonna(sodX,sodY);
@@ -1858,18 +1893,18 @@ function drawCafeInterior(indX,indY,tick){
     ctx.fillText(name,x+2,y-4);
   }
   cafeLabel(sodX,sodY,'Sodonna');
-  cafeLabel(wingX,wingY,'Wing');
+  cafeLabel(wingX,sodY-14,'Wing');
 
   // May + Kobe (clamped to room)
   const miy=Math.min(Math.max(indY,RY+20),RY+RH-30);
   const mix=Math.min(Math.max(indX,RX+10),RX+RW-30);
   drawMay(mix,miy,tick,G.facing||'down');
-  drawKobe(mix-26,miy+4,tick,G.facing||'right');
+  drawKobe(mix-26,miy+4,tick,G.facing);
   cafeLabel(mix,miy,'May');
   cafeLabel(mix-26,miy+4,'Kobe');
 
-  // Talk prompt
-  const sd=Math.hypot(mix-(CX+CW+16),miy-(CY+40));
+  // Talk prompt — between Sodonna & Wing behind counter
+  const sd=Math.hypot(mix-((sodX+wingX)/2+11),miy-(CY+40));
   if(sd<90){
     r(mix-38,miy-26,88,14,'rgba(0,0,0,0.75)');
     ctx.fillStyle='#a8e870';ctx.font='bold 8px monospace';
@@ -1880,8 +1915,12 @@ function drawCafeInterior(indX,indY,tick){
   r(RX+RW/2-12,RY+RH-2,24,7,'#1a1a1a');
   r(RX+RW/2-10,RY+RH,20,5,'#888');
 
-  // Dark band below
-  r(0,RY+RH+16,W,H-(RY+RH+16),'#0a0a0a');
+  // Dark band below — keep some dusk bleed visible at canvas edges
+  const bbGrad=ctx.createLinearGradient(0,RY+RH+12,0,H);
+  bbGrad.addColorStop(0,'rgba(12,10,18,0.88)');
+  bbGrad.addColorStop(1,'rgba(26,18,34,0.72)');
+  ctx.fillStyle=bbGrad;
+  ctx.fillRect(0,RY+RH+10,W,H-(RY+RH+10));
   ctx.fillStyle='rgba(200,200,200,0.5)';ctx.font='10px monospace';ctx.textAlign='center';
   ctx.fillText('ENTER: talk   \u2193 walk south to exit',W/2,RY+RH+38);ctx.textAlign='left';
 }
@@ -2355,6 +2394,10 @@ function moveInd(dx,dy,dt){
   const nx=G.indX+dx*SPEED*dt, ny=G.indY+dy*SPEED*dt;
   if(canStepInd(nx,G.indY))G.indX=nx;
   if(canStepInd(G.indX,ny))G.indY=ny;
+  const house=G.indLoc==='house';
+  const RX=house?160:180, RY=house?80:100, RW=house?320:280;
+  G.indX=Math.max(RX+8,Math.min(G.indX,RX+RW-46));
+  G.indY=Math.max(RY+18,Math.min(G.indY,house?325:305));
   if(Math.abs(dx)>Math.abs(dy)){
     G.facing=dx>0?'right':'left';
   } else {
@@ -2621,7 +2664,8 @@ function loop(ts){
     // Indoor NPC interaction
     if(G.aBtn&&G.cooldown<=0){
       if(G.indLoc==='cafe'){
-        const sd=Math.hypot(G.indX-215,G.indY-100);
+        const cafeStaffMidX=236;
+        const sd=Math.hypot(G.indX-cafeStaffMidX,G.indY-100);
         if(sd<90){G.aBtn=false;G.mode='INDOOR_TALK';G.indNpcLine=0;G.indNpcWho='couple';G.cooldown=1.0;}
       } else if(G.indLoc==='house'){
         G.aBtn=false;G.mode='INDOOR_TALK';G.indNpcLine=0;G.indNpcWho='house_browse';G.cooldown=1.0;
