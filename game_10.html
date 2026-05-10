@@ -183,6 +183,36 @@ const ENC_DATA = [
   ]},
 ];
 
+const BATTLE_ROUNDS=3;
+/** Three close-quarters enemy moves per encounter — indexed by round (0..2). May HP never hits 0; Kobe always wins after BATTLE_ROUNDS hits. */
+const ENC_ENEMY_ATTACKS=[
+  [
+    ['📋 CLIPBOARD ARC!','The agent steps into your shoes — binder clips your shoulder.\nMelee-range paperwork. -1 HP'],
+    ['👔 LAPEL GRAB!','A sharp sidestep. Silk tie whistles past your nose.\nToo close to pretend it missed. -1 HP'],
+    ['📝 STAMP LUNGE!','Rubber stamp thrust at hoodie-level.\nSignature distance = zero. -1 HP'],
+  ],
+  [
+    ['💸 INVOICE EDGE!','The paper corners you against the wall.\nArm\'s-length billing. -1 HP'],
+    ['📎 CLIP SNAP!','Bulldog clip clicks beside your ear.\nInside your personal bubble. -1 HP'],
+    ['💰 FEE SHOVE!','Line items thrust square in your face.\nNo runway left. -1 HP'],
+  ],
+  [
+    ['🌀 ZEN CROWD!','He glides into your space — calm, unavoidable.\nWarm skin distance. -1 HP'],
+    ['🦶 ARCH HOOK!','Barefoot pivot clips your ankle.\nFloor became the arena. -1 HP'],
+    ['✨ PRESENCE PRESS!','No touch — only pressure.\nClose-quarters aura check. -1 HP'],
+  ],
+  [
+    ['💧 BUCKET HIP-CHECK!','Soapy water lunges from hip height.\nSplash radius: your shirt. -1 HP'],
+    ['🍽 STACK SWAY!','The leaning tower boops your chin.\nPorcelain point-blank. -1 HP'],
+    ['🧽 SPONGE FLICK!','Grey water flicks from inches away.\nKitchen melee. -1 HP'],
+  ],
+  [
+    ['🚌 GRILLE BREATH!','Yellow paint fills your vision — heat on your cheeks.\nBumper-close. -1 HP'],
+    ['📣 HORN POINT-BLANK!','The blast hits from one arm\'s length.\nSkull-level noise. -1 HP'],
+    ['🛞 CURB KISS!','Tyre scrapes the kerb beside your toes.\nAlmost pinned. -1 HP'],
+  ],
+];
+
 function kobeHeroX(){
   const e=ENC_DATA[G.curEnc];
   return e&&e.kobeLead?52:22;
@@ -236,7 +266,8 @@ const HOUSE_BOARDING_SENDOFF_LINES = [
   { sp:'Dad',  tx:'There she is. Barcelona-bound.' },
   { sp:'Dad',  tx:'We are so proud of you, May.\nGo show them what you\'ve got.' },
   { sp:'DoDo',    tx:'...Socks in your carry-on.\nAnd tissues. Just in case.' },
-  { sp:'DoDo',    tx:'Good luck. Bring back photos.' },
+  { sp:'DoDo',    tx:'I will watch over Grandma and Dad — this whole household —\nwhile you are gone. You only worry about the plane.' },
+  { sp:'DoDo',    tx:'Wish you the brightest adventure in Barcelona.\nEat everything worth eating. Bring back stories.' },
   { sp:'Grandma', tx:'All our love goes with you.' },
   { sp:'May',     tx:'Thank you. For everything.' },
   { sp:'Kobe',    tx:'WOOF WOOF!' },
@@ -255,6 +286,7 @@ const CAB_FAREWELL_LINES = [
   { sp:'Grandma', tx:'The cab\'s waited. One more hug counts double.' },
   { sp:'Dad',  tx:'Passport. Phone charger. Kobe.\nYou\'re covered.' },
   { sp:'DoDo',    tx:'...There are buns in your bag.\nEat before you sleep.' },
+  { sp:'DoDo',    tx:'I will keep everyone watered and fussed-over till you text us from Spain.\nGo — Barcelona is yours.' },
   { sp:'Gary',    tx:'Whenever you\'re ready.' },
   { sp:'May',     tx:'I love you all. Really.' },
   { sp:'Kobe',    tx:'WOOF!' },
@@ -339,6 +371,7 @@ const G = {
   keys: {}, tdir: {x:0,y:0},
   kobeAttackPick: 0, // battle: 0 = CHOMP, 1 = MARK (pee) — same damage
   busHonkPlayed: false,
+  joDogPlayT: 0, // Jo's flat: seconds left of Charlie+Kobe gentle play intro before SPACE talk works
 };
 
 function mayFlatFootBlocked(px,py){
@@ -772,40 +805,81 @@ function drawDishesEncounter(ox,oy,tick=0){
   ctx.lineCap='butt'; ctx.lineWidth=1;
 }
 
-// Hong Kong double-decker — loud city encounter
+// Hong Kong-style double-decker — side profile for encounter art
 function drawBusEncounter(ox,oy,tick=0){
   const x=Math.floor(ox),y=Math.floor(oy);
   const idle=Math.floor(tick/11)%2===0;
   const horn=(Math.floor(tick/9)%4)<2;
-  ctx.fillStyle='rgba(0,0,0,0.18)';
-  ctx.beginPath(); ctx.ellipse(x+44,y+38,46,6,0,0,Math.PI*2); ctx.fill();
 
-  r(x+4,y+14,82,26,'#e8b818');
-  r(x+6,y+16,78,11,'#282830');
-  r(x+8,y+18,18,7,'#5890c8');
-  r(x+28,y+18,18,7,'#5890c8');
-  r(x+48,y+18,18,7,'#5890c8');
-  r(x+68,y+18,10,7,'#5890c8');
-  r(x+6,y+28,78,10,'#485058');
-  r(x+10,y+30,14,6,'#384048');
-  r(x+28,y+30,14,6,'#384048');
-  r(x+46,y+30,14,6,'#384048');
-  r(x+64,y+30,14,6,'#384048');
-  r(x+82,y+28,4,10,'#343840');
-  r(x+4,y+38,88,12,'#d02828');
-  r(x+82,y+28,10,22,'#f0f0f8');
-  r(x+84,y+30,6,6,horn?'#ffffc8':'#686878');
-  r(x+84,y+38,6,6,horn?'#ffff98':'#586068');
-  r(x+76,y+42,6,5,'#181820');
-  if(idle) r(x+12,y+42,42,4,'rgba(0,0,0,0.12)');
+  ctx.fillStyle='rgba(0,0,0,0.2)';
+  ctx.beginPath(); ctx.ellipse(x+48,y+52,50,7,0,0,Math.PI*2); ctx.fill();
+
+  const body='#f0bc18';
+  const bodySh='#d09810';
+  const band='#1c2028';
+  const glass='#5c7ca8';
+  const glassHi='#8aacd8';
+  const cream='#ece8e4';
+
+  r(x+4,y+18,6,28,bodySh);
+  r(x+6,y+8,80,40,body);
+  r(x+6,y+8,80,4,bodySh);
+
+  r(x+9,y+11,62,11,band);
+  for(let wi=0;wi<4;wi++){
+    const wx=x+11+wi*15;
+    r(wx,y+13,12,7,glass);
+    r(wx+1,y+14,10,3,glassHi);
+  }
+
+  r(x+8,y+23,72,3,cream);
+  r(x+10,y+24,28,2,'#d02828');
+
+  r(x+9,y+27,48,11,band);
+  for(let wi=0;wi<3;wi++){
+    const wx=x+11+wi*15;
+    r(wx,y+29,12,7,glass);
+    r(wx+1,y+30,10,3,glassHi);
+  }
+
+  r(x+58,y+28,8,10,'#2a2420');
+  r(x+59,y+29,6,8,'#4a5468');
+
+  r(x+68,y+10,22,36,body);
+  r(x+70,y+12,18,8,band);
+  r(x+72,y+14,14,5,'#3a6048');
+  r(x+73,y+15,12,3,'#58c090');
+
+  r(x+76,y+22,16,20,'#283445');
+  r(x+77,y+23,14,6,glassHi);
+  r(x+77,y+30,14,11,glass);
+
+  r(x+87,y+18,3,8,cream);
+  r(x+88,y+20,2,4,glass);
+
+  r(x+72,y+40,20,8,'#c82828');
+  r(x+74,y+42,5,4,horn?'#fff8c8':'#d8c870');
+  r(x+84,y+42,5,4,horn?'#fff8c8':'#d8c870');
+  r(x+78,y+44,8,3,'#1a1a22');
+
+  r(x+16,y+44,16,9,'#141418');
+  r(x+18,y+46,12,5,'#2e3038');
+  r(x+21,y+47,6,3,'#585c68');
+
+  r(x+44,y+44,16,9,'#141418');
+  r(x+46,y+46,12,5,'#2e3038');
+  r(x+49,y+47,6,3,'#585c68');
+
+  if(idle) r(x+12,y+41,52,3,'rgba(0,0,0,0.08)');
+
   const hx=x+(horn?-4:0);
   ctx.strokeStyle=`rgba(255,248,180,${horn?0.85:0.25})`;
   ctx.lineWidth=2;
   for(let i=0;i<4;i++){
-    ctx.beginPath(); ctx.arc(hx+82,y+26,18+i*14,-0.35,0.35); ctx.stroke();
+    ctx.beginPath(); ctx.arc(hx+86,y+28,16+i*14,-0.42,0.42); ctx.stroke();
   }
   ctx.font='bold 8px monospace';ctx.fillStyle=`rgba(255,245,200,${horn?1:0.35})`;ctx.textAlign='center';
-  ctx.fillText(horn?'HONK':'···',hx+52,y+10);ctx.textAlign='left';ctx.lineWidth=1;
+  ctx.fillText(horn?'HONK':'···',hx+46,y+6);ctx.textAlign='left';ctx.lineWidth=1;
 }
 
 function drawNaked(ox,oy,tick=0){
@@ -848,6 +922,66 @@ function drawNaked(ox,oy,tick=0){
   // Underwear / barely covered — just a tiny suggestion
   r(x+7,y+22,10,3,SKEL);
   // No beard — clean chin
+}
+
+function encounterMapStyle(sprite,pulse){
+  const p=0.12+pulse*0.22, e=0.45+pulse*0.35;
+  switch(sprite){
+    case 'invoice': return [`rgba(220,140,60,${p})`,`rgba(255,190,120,${e})`,'rgba(255,230,200,0.92)'];
+    case 'agent': return [`rgba(130,110,210,${p})`,`rgba(190,170,255,${e})`,'rgba(230,220,255,0.92)'];
+    case 'dishes': return [`rgba(80,160,220,${p})`,`rgba(120,200,255,${e})`,'rgba(180,230,255,0.92)'];
+    case 'bus': return [`rgba(255,200,40,${p})`,`rgba(255,210,80,${e})`,'rgba(255,230,120,0.92)'];
+    case 'naked': return [`rgba(200,70,100,${p})`,`rgba(255,130,150,${e})`,'rgba(255,200,210,0.92)'];
+    default: return [`rgba(240,80,40,${p})`,`rgba(255,200,40,${e})`,'rgba(255,240,200,0.92)'];
+  }
+}
+
+function drawEncounterSpriteOnTile(sprite,sx,sy,tk){
+  ctx.save();
+  switch(sprite){
+    case 'agent':
+      ctx.translate(sx+6,sy+12); ctx.scale(0.52,0.52); drawAgent(0,0); break;
+    case 'invoice':
+      ctx.translate(sx+14,sy+22); ctx.scale(0.42,0.42); drawInvoice(-14,-14,tk); break;
+    case 'dishes':
+      ctx.translate(sx-4,sy+2); ctx.scale(0.55,0.55); drawDishesEncounter(0,0,tk); break;
+    case 'bus':
+      ctx.translate(sx-22,sy-18); ctx.scale(0.52,0.52); drawBusEncounter(0,0,tk); break;
+    case 'naked':
+      ctx.translate(sx+5,sy+10); ctx.scale(0.36,0.36); drawNaked(0,0,tk); break;
+    default: break;
+  }
+  ctx.restore();
+}
+
+function drawEncounterTileCommon(enc,clearedIdx,sx,sy,tk,isHRoad){
+  r(sx,sy,TILE,TILE,isHRoad?'#252320':'#4e4840');
+  if(G.cleared[clearedIdx]){
+    r(sx+8,sy+8,TILE-16,TILE-16,'rgba(80,200,120,0.18)');
+    ctx.fillStyle='rgba(120,220,140,0.65)';ctx.font='10px monospace';ctx.textAlign='center';
+    ctx.fillText('\u2713',sx+TILE/2,sy+TILE/2+4);ctx.textAlign='left';
+    return;
+  }
+  const pulseRate=enc.sprite==='bus'?0.18:0.12;
+  const pulse=(Math.sin(tk*pulseRate)*0.5+0.5);
+  const [fillTint,edgeTint,arrowTint]=encounterMapStyle(enc.sprite,pulse);
+  r(sx,sy,TILE,TILE,fillTint);
+  r(sx,sy,TILE,2,edgeTint);
+  r(sx,sy+TILE-2,TILE,2,edgeTint);
+  r(sx,sy,2,TILE,edgeTint);
+  r(sx+TILE-2,sy,2,TILE,edgeTint);
+  drawEncounterSpriteOnTile(enc.sprite,sx,sy,tk);
+  ctx.fillStyle='#f8f8e8'; ctx.font='bold 7px monospace'; ctx.textAlign='center';
+  const words=enc.name.split(' ');
+  if(words.length>=2){
+    ctx.fillText(words[0],sx+TILE/2,sy-14);
+    ctx.fillText(words.slice(1).join(' '),sx+TILE/2,sy-6);
+  } else ctx.fillText(enc.name,sx+TILE/2,sy-8);
+  ctx.textAlign='left';
+  const bobRate=enc.sprite==='bus'?0.2:0.15;
+  const bob=Math.floor(Math.sin(tk*bobRate)*3);
+  ctx.fillStyle=arrowTint; ctx.font='10px monospace'; ctx.textAlign='center';
+  ctx.fillText('\u25bc',sx+TILE/2,sy+TILE+10+bob); ctx.textAlign='left';
 }
 
 // NPC: Gary — casual male, looking at phone
@@ -1359,81 +1493,18 @@ function drawExtTile(col,row){
     }
 
     case T_ENC1: case T_ENC2: {
-      const id=t-T_ENC1;
-      const done=G.cleared[id];
-      r(sx,sy,TILE,TILE,isHRoad?'#252320':'#4e4840');
-      if(!done){
-        const pulse=(Math.sin(tk*0.12)*0.5+0.5);
-        r(sx,sy,TILE,TILE,`rgba(240,80,40,${0.25+pulse*0.35})`);
-        r(sx,sy,TILE,2,`rgba(255,200,40,${0.7+pulse*0.3})`);
-        r(sx,sy+TILE-2,TILE,2,`rgba(255,200,40,${0.7+pulse*0.3})`);
-        r(sx,sy,2,TILE,`rgba(255,200,40,${0.7+pulse*0.3})`);
-        r(sx+TILE-2,sy,2,TILE,`rgba(255,200,40,${0.7+pulse*0.3})`);
-        ctx.font=`bold ${14+Math.floor(pulse*4)}px monospace`;
-        ctx.fillStyle=`rgba(255,240,60,0.95)`;
-        ctx.textAlign='center';
-        ctx.fillText('!',sx+TILE/2,sy+TILE/2+5);
-        ctx.textAlign='left';
-        const bob=Math.floor(Math.sin(tk*0.15)*3);
-        ctx.fillStyle='rgba(255,220,60,0.85)';
-        ctx.font='10px monospace';ctx.textAlign='center';
-        ctx.fillText('▼',sx+TILE/2,sy-4+bob);
-        ctx.textAlign='left';
-      } else {
-        r(sx+8,sy+8,TILE-16,TILE-16,'rgba(80,200,80,0.2)');
-        ctx.fillStyle='rgba(100,220,100,0.6)';ctx.font='10px monospace';ctx.textAlign='center';
-        ctx.fillText('✓',sx+TILE/2,sy+TILE/2+4);ctx.textAlign='left';
-      }
+      const idx=t-T_ENC1;
+      drawEncounterTileCommon(ENC_DATA[idx],idx,sx,sy,tk,isHRoad);
       break;
     }
 
-    case T_ENC_DISHES: {
-      const done=G.cleared[3];
-      r(sx,sy,TILE,TILE,isHRoad?'#252320':'#4e4840');
-      if(!done){
-        const pulse=(Math.sin(tk*0.12)*0.5+0.5);
-        r(sx,sy,TILE,TILE,`rgba(80,160,220,${0.12+pulse*0.22})`);
-        r(sx,sy,TILE,2,`rgba(120,200,255,${0.45+pulse*0.35})`);
-        r(sx,sy+TILE-2,TILE,2,`rgba(120,200,255,${0.45+pulse*0.35})`);
-        r(sx,sy,2,TILE,`rgba(120,200,255,${0.45+pulse*0.35})`);
-        r(sx+TILE-2,sy,2,TILE,`rgba(120,200,255,${0.45+pulse*0.35})`);
-        ctx.save(); ctx.translate(sx-4,sy+2); ctx.scale(0.55,0.55);
-        drawDishesEncounter(0,0,tk);
-        ctx.restore();
-        ctx.fillStyle='#f8f8e8'; ctx.font='bold 9px monospace'; ctx.textAlign='center';
-        ctx.fillText('Dishes',sx+TILE/2,sy-6); ctx.textAlign='left';
-        const bob=Math.floor(Math.sin(tk*0.15)*3);
-        ctx.fillStyle='rgba(180,230,255,0.9)'; ctx.font='10px monospace'; ctx.textAlign='center';
-        ctx.fillText('\u25bc',sx+TILE/2,sy+TILE+10+bob); ctx.textAlign='left';
-      } else {
-        r(sx+8,sy+8,TILE-16,TILE-16,'rgba(80,200,120,0.18)');
-        ctx.fillStyle='rgba(120,220,140,0.65)';ctx.font='10px monospace';ctx.textAlign='center';
-        ctx.fillText('\u2713',sx+TILE/2,sy+TILE/2+4);ctx.textAlign='left';
-      }
+    case T_ENC_DISHES:
+      drawEncounterTileCommon(ENC_DATA[3],3,sx,sy,tk,isHRoad);
       break;
-    }
 
-    case T_ENC_BUS: {
-      const done=G.cleared[4];
-      r(sx,sy,TILE,TILE,isHRoad?'#252320':'#4e4840');
-      if(!done){
-        const pulse=(Math.sin(tk*0.18)*0.5+0.5);
-        r(sx,sy,TILE,TILE,`rgba(255,200,40,${0.18+pulse*0.28})`);
-        ctx.save(); ctx.translate(sx-22,sy-18); ctx.scale(0.52,0.52);
-        drawBusEncounter(0,0,tk);
-        ctx.restore();
-        ctx.fillStyle='#f8e878'; ctx.font='bold 9px monospace'; ctx.textAlign='center';
-        ctx.fillText('BUS',sx+TILE/2,sy-8); ctx.textAlign='left';
-        const bob=Math.floor(Math.sin(tk*0.2)*3);
-        ctx.fillStyle='rgba(255,230,120,0.9)'; ctx.font='10px monospace'; ctx.textAlign='center';
-        ctx.fillText('\u25bc',sx+TILE/2,sy+TILE+10+bob); ctx.textAlign='left';
-      } else {
-        r(sx+8,sy+8,TILE-16,TILE-16,'rgba(80,200,120,0.15)');
-        ctx.fillStyle='rgba(120,220,140,0.65)';ctx.font='10px monospace';ctx.textAlign='center';
-        ctx.fillText('\u2713',sx+TILE/2,sy+TILE/2+4);ctx.textAlign='left';
-      }
+    case T_ENC_BUS:
+      drawEncounterTileCommon(ENC_DATA[4],4,sx,sy,tk,isHRoad);
       break;
-    }
 
     case T_TAXI: {
       const ok=G.hasBoarding&&G.farewellDone;
@@ -2172,10 +2243,16 @@ function drawCaveMap(){
             r(x+4,y+6,TILE-8,TILE-12,'rgba(18,10,16,0.92)');
             const flick=Math.sin(G.tick*0.09)*0.5+0.5;
             r(x+10,y+8,TILE-20,TILE-18,`rgba(28,18,32,${0.45+flick*0.2})`);
+            ctx.save();
+            ctx.translate(x+6,y+15); ctx.scale(0.32,0.32);
+            drawNaked(0,0,G.tick);
+            ctx.restore();
+            ctx.fillStyle='#f8e8e8'; ctx.font='bold 7px monospace'; ctx.textAlign='center';
+            ctx.fillText('Naked',x+TILE/2,y+6);
+            ctx.fillText('Man',x+TILE/2,y+13);
+            ctx.textAlign='left';
             ctx.fillStyle=`rgba(140,25,38,${0.18+flick*0.32})`;
             ctx.fillRect(x+22,y+12,4,3);
-            ctx.fillStyle='rgba(255,255,255,0.06)';
-            ctx.fillRect(x+14,y+24,(G.tick%40)<20?8:6,2);
           } else {
             r(x,y,TILE,TILE,C.caveF);
             r(x,y,TILE,1,C.caveFL); r(x,y,1,TILE,C.caveFL);
@@ -2266,6 +2343,35 @@ function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,f
     wallPic(RX+118,RY-22,16,12,'#907868');
     wallPic(RX+TATW+28,RY-25,18,13,'#5a7848');
     wallPic(RX-12,RY+52,10,16,'#d8c8a8');
+    // Ninetales-inspired fox poster (kitchen side of north wall)
+    (function ninetalesPoster(){
+      const px=RX+198, py=RY-29, pw=28, ph=32;
+      r(px-2,py-2,pw+4,ph+4,'#2a1810');
+      r(px-1,py-1,pw+2,ph+2,'#e8dcc8');
+      r(px,py,pw,ph,'#5a7a98');
+      ctx.strokeStyle='rgba(255,245,220,0.35)'; ctx.lineWidth=1;
+      ctx.strokeRect(px+1,py+1,pw-2,ph-2);
+      const ox=px+14, oy=py+17;
+      const CR='#f5ead8', CRD='#e8d4b8', EAR='#efd9c0', TIP='#e08038', EYE='#201818';
+      r(ox-6,oy-12,12,6,EAR);
+      r(ox-5,oy-11,10,11,CR);
+      r(ox-7,oy-12,4,5,EAR); r(ox+3,oy-12,4,5,EAR);
+      r(ox-4,oy-8,2,2,EYE); r(ox+2,oy-8,2,2,EYE);
+      r(ox-2,oy-5,4,2,'#c89888');
+      r(ox-4,oy-3,8,9,CRD);
+      r(ox-5,oy+2,10,7,CR);
+      for(let ti=0;ti<9;ti++){
+        const tx=ox-18+ti*2+(ti%2);
+        const th=12+(ti%4)*2;
+        const ty=oy-6+(ti%3);
+        r(tx,ty,3,th-3,CRD);
+        r(tx,ty+th-5,3,4,TIP);
+      }
+      r(ox+8,oy-4,4,14,CRD); r(ox+9,oy+8,3,4,TIP);
+      r(ox+10,oy-2,3,12,CR); r(ox+11,oy+8,2,3,TIP);
+      ctx.fillStyle='rgba(40,55,75,0.5)'; ctx.font='6px monospace'; ctx.textAlign='center';
+      ctx.fillText('038',px+pw/2,py+ph-4); ctx.textAlign='left';
+    })();
   }
 
   if(isJo){
@@ -2389,12 +2495,15 @@ function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,f
   }
 
   if(isJo){
-    const jx=KX-38+Math.sin(tick*0.0016)*5, jy=RY+118;
-    ctx.save(); ctx.translate(jx,jy); ctx.scale(1.12,1.12); drawJo(0,0,tick); ctx.restore();
+    const joDogPlay=(G.joDogPlayT||0)>0;
+    const jx=KX-38+(joDogPlay?0:Math.sin(tick*0.0016)*5), jy=RY+118;
+    ctx.save(); ctx.translate(jx,jy); ctx.scale(1.12,1.12); drawJo(0,0,joDogPlay?0:tick); ctx.restore();
     npcLabel(jx,jy,'Jo','#f0ddd8');
-    const cx=jx-46, cy=jy+12;
-    ctx.save(); ctx.translate(cx,cy); ctx.scale(1.06,1.06); drawCharlie(0,0,tick,'right'); ctx.restore();
-    npcLabel(cx,cy,'Charlie','#c8c8d0');
+    if(!joDogPlay){
+      const cx=jx-46, cy=jy+12;
+      ctx.save(); ctx.translate(cx,cy); ctx.scale(1.06,1.06); drawCharlie(0,0,tick,'right'); ctx.restore();
+      npcLabel(cx,cy,'Charlie','#c8c8d0');
+    }
   } else {
     const gxS=RX+96, gyS=RY+136, fxS=RX+280, fyS=RY+132;
     let gxD, gyD, fxD, fyD, dodX=KX+46, dodY=KY+62;
@@ -2439,10 +2548,34 @@ function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,f
   // May + Kobe (clamped to room)
   const miy=Math.min(Math.max(indY,RY+20),RY+RH-30);
   const mix=Math.min(Math.max(indX,RX+10),RX+RW-30);
+  const joDogPlay=isJo&&(G.joDogPlayT||0)>0;
   drawMay(mix,miy,tick,G.facing||'down');
-  drawKobe(mix-26,miy+4,tick,G.facing);
+  if(!joDogPlay)
+    drawKobe(mix-26,miy+4,tick,G.facing);
   npcLabel(mix,miy,'May','#f8e8d8');
-  npcLabel(mix-26,miy+4,'Kobe','#d8c8a0');
+  if(!joDogPlay)
+    npcLabel(mix-26,miy+4,'Kobe','#d8c8a0');
+
+  if(joDogPlay){
+    const spd=tick*0.036;
+    const cx0=RX+178, cy0=RY+152;
+    const rx=30, ry=12;
+    const chX=cx0+Math.cos(spd)*rx;
+    const chY=cy0+Math.sin(spd)*ry;
+    const kbX=cx0+Math.cos(spd-1.1)*(rx-5);
+    const kbY=cy0+Math.sin(spd-1.1)*(ry-4);
+    const chFace=Math.sin(spd)<0?'right':'left';
+    const kbFace=Math.sin(spd-1.1)<0?'right':'left';
+    ctx.save(); ctx.translate(chX,chY); ctx.scale(1.05,1.05); drawCharlie(0,0,tick,chFace); ctx.restore();
+    ctx.save(); ctx.translate(kbX,kbY); ctx.scale(1.05,1.05); drawKobe(0,0,tick,kbFace); ctx.restore();
+    npcLabel(chX,chY,'Charlie','#c8c8d0');
+    npcLabel(kbX,kbY,'Kobe','#d8c8a0');
+    const hb=tick*0.06;
+    drawHeart(chX+8,chY-24+Math.sin(hb)*2,3);
+    drawHeart(chX+14,chY-20+Math.cos(hb)*2,2);
+    drawHeart(kbX+8,kbY-24+Math.cos(hb)*2,3);
+    drawHeart(kbX+14,kbY-20+Math.sin(hb)*2,2);
+  }
 
   if(!isJo&&farewellActive&&fwLine>=0&&fwLine<=5){
     drawHeart(mix+4,miy-24,4);
@@ -3003,7 +3136,7 @@ function drawBattleAttackMenu(){
   ctx.fillText('\u2191 / \u2193 choose   SPACE / ENTER',mx+14,my+92);
   const attacks=G.kobeAttacks||0;
   ctx.fillStyle='#c49a5a';ctx.font='10px monospace';
-  ctx.fillText('Hits landed: '+'\u2605'.repeat(attacks)+'\u2606'.repeat(Math.max(0,3-attacks)),mx+14,my+112);
+  ctx.fillText('Hits landed: '+'\u2605'.repeat(attacks)+'\u2606'.repeat(Math.max(0,BATTLE_ROUNDS-attacks)),mx+14,my+112);
   ctx.fillStyle='rgba(150,220,100,0.85)';ctx.font='9px monospace';
   ctx.fillText('Both moves: full damage',mx+14,my+130);
 }
@@ -3101,8 +3234,8 @@ function drawBattle(){
   r(ibx-3,iby-3,234,62,C.uiB);r(ibx,iby,228,56,C.uiBg);
   ctx.fillStyle=C.white;ctx.font='bold 13px monospace';ctx.fillText(enc.name,ibx+8,iby+20);
   r(ibx+8,iby+32,188,10,'#2a2a3a');
-  const hp=Math.max(0,(1-attacksDone)/1);
-  r(ibx+8,iby+32,Math.round(188*hp),10,hp>0.5?C.green:hp>0.25?C.orange:C.red);
+  const hp=Math.max(0,(BATTLE_ROUNDS-attacksDone)/BATTLE_ROUNDS);
+  r(ibx+8,iby+32,Math.round(188*hp),10,hp>0.66?C.green:hp>0.33?C.orange:C.red);
   ctx.fillStyle='#888';ctx.font='10px monospace';ctx.fillText('HP',ibx+200,iby+41);
 
   const mbx=12,mby=H-172;
@@ -3123,13 +3256,16 @@ function drawBattle(){
 
   if(G.battlePhase==='enemyrecoil'&&G.enemyAttackMsg){
     const [title,desc]=G.enemyAttackMsg;
-    r(W/2-140,H/2-36,280,72,'rgba(0,0,0,0.88)');
-    r(W/2-140,H/2-36,280,2,'#e84040');
-    ctx.fillStyle='#ff8080';ctx.font='bold 13px monospace';ctx.textAlign='center';
-    ctx.fillText(title,W/2,H/2-14);
-    ctx.fillStyle='#e8d8c8';ctx.font='10px monospace';
     const lines2=desc.split('\n');
-    lines2.forEach((l,i)=>ctx.fillText(l,W/2,H/2+8+i*14));
+    const lineH=14;
+    const boxH=26+lines2.length*lineH+14;
+    const boxY=H/2-boxH/2;
+    r(W/2-140,boxY,280,boxH,'rgba(0,0,0,0.88)');
+    r(W/2-140,boxY,280,2,'#e84040');
+    ctx.fillStyle='#ff8080';ctx.font='bold 13px monospace';ctx.textAlign='center';
+    ctx.fillText(title,W/2,boxY+20);
+    ctx.fillStyle='#e8d8c8';ctx.font='10px monospace';
+    lines2.forEach((l,i)=>ctx.fillText(l,W/2,boxY+36+i*lineH));
     ctx.textAlign='left';
     const shake=Math.floor(Math.sin(G.battleTimer*20)*3);
     ctx.save();ctx.translate(shake,0);
@@ -3151,7 +3287,11 @@ function drawBattle(){
   } else if(bp==='koberun'||bp==='kobebite'){
     drawDialog([(G.kobeAttackPick===1?'MARK YOUR SPOT!':'GET THEM KOBE!')],'May');
   } else if(bp==='kobereturn'){
-    drawDialog([attacksDone>=1?(kLead?'Absolute legend.':'That did it!'):(kLead?'Again, Kobe!':'Again!')],'May');
+    let msg;
+    if(attacksDone>=BATTLE_ROUNDS) msg=kLead?'Absolute legend.':'That did it!';
+    else if(attacksDone===2) msg=kLead?'Again, Kobe — last push!':'One more — finish close!';
+    else msg=kLead?'Solid — keep him busy!':'Nice — stay on them!';
+    drawDialog([msg],'May');
   } else if(bp==='result'){
     drawDialog([enc.lines[enc.lines.length-1]],'\u2605 RESULT');
   }
@@ -3218,7 +3358,7 @@ function drawCabFarewellScene(){
   G.camX=ox; G.camY=oy;
 
   const cl=CAB_FAREWELL_LINES[Math.min(G.cabFwLine,CAB_FAREWELL_LINES.length-1)];
-  if(G.cabFwLine===5) drawWoof(msx,msy-10);
+  if(G.cabFwLine===6) drawWoof(msx,msy-10);
   drawDialog([cl.tx],cl.sp||'');
 }
 
@@ -3780,6 +3920,7 @@ function loop(ts){
             }
             if(hit.loc==='house') G.visitedHouse=true;
             else if(hit.loc==='cafe') G.visitedCafe=true;
+            if(hit.loc==='jo_house') G.joDogPlayT=4;
             G.mode='INDOOR';
             flashScreen();
           } else if(hit.type==='cave'){
@@ -3859,14 +4000,9 @@ function loop(ts){
       const dmg=1;
       G.mayHP=Math.max(1,G.mayHP-dmg);
       if(G.curEnc===4&&!G.busHonkPlayed){playBusHonk();G.busHonkPlayed=true;}
-      const attackMsgs=[
-        ['📋 PAPERWORK AVALANCHE!','Contracts buried May!\n-1 HP'],
-        ['💸 INVOICE STRIKE!','The bill hit hard!\n-1 HP'],
-        ['🌧️ COLD RAIN CHILL!','Water drips from the stone.\n-1 HP'],
-        ['💧 SOAPY WAVE!','Bucket splash!\n-1 HP'],
-        ['📣 DIESEL KLAXON!','Horn + brakes.\nKobe\'s whole skull rattles!\n-1 HP'],
-      ];
-      G.enemyAttackMsg=attackMsgs[G.curEnc]||attackMsgs[0];
+      const pool=ENC_ENEMY_ATTACKS[G.curEnc]||ENC_ENEMY_ATTACKS[0];
+      const ri=Math.min(G.kobeAttacks||0,BATTLE_ROUNDS-1);
+      G.enemyAttackMsg=pool[ri];
       G.battlePhase='enemyrecoil';G.battleTimer=0;
     } else if(G.battlePhase==='enemyrecoil'){
       drawBattle();
@@ -3885,7 +4021,11 @@ function loop(ts){
       if(G.battleTimer>0.6){G.kobeAttacks=(G.kobeAttacks||0)+1;G.kobePhase=3;G.kobeBattleX=kobeHeroX();G.battleTimer=0;G.battlePhase='kobereturn';}
     } else if(G.battlePhase==='kobereturn'){
       drawBattle();
-      if(G.battleTimer>0.4){G.kobePhase=0;G.battleTimer=0;G.battlePhase='result';}
+      if(G.battleTimer>0.4){
+        G.kobePhase=0;G.battleTimer=0;
+        if((G.kobeAttacks||0)>=BATTLE_ROUNDS) G.battlePhase='result';
+        else G.battlePhase='enemyattack';
+      }
     } else if(G.battlePhase==='result'){
       drawBattle();
       if(G.aBtn){
@@ -3913,13 +4053,13 @@ function loop(ts){
     drawHUD();
     const npcLines={
       gary:[
-        {sp:'Gary', tx:'(He looks up from his phone.)'},
-        {sp:'Gary', tx:'Heard you are leaving today.'},
-        {sp:'May',  tx:'Barcelona. Yeah.'},
-        {sp:'Gary', tx:'That is incredible. For real.'},
-        {sp:'Gary', tx:'Do not forget us. Well — remember\nthe good parts.'},
-        {sp:'May',  tx:'Ha. Yeah. The good parts.'},
-        {sp:'Gary', tx:'Go get it. 🤙'},
+        {sp:'Gary', tx:'(He looks up from his phone — rare eye contact.)'},
+        {sp:'Gary', tx:'I\'m really happy I got to know you and Robbie.\nThat actually means something in this neighbourhood.'},
+        {sp:'May', tx:'Same here. For real.'},
+        {sp:'Gary', tx:'If you need me: I\'m usually outside No Title,\nright here on the pavement.'},
+        {sp:'Gary', tx:'Not here? Check the card shop a few doors down —\nI basically live between those two spots.'},
+        {sp:'Gary', tx:'Either way, you\'re welcome anytime.'},
+        {sp:'May', tx:'Locked in. Take care out here.'},
       ],
     };
     const nlines=npcLines[G.npcWho]||[{sp:'???',tx:'...'}];
@@ -3932,6 +4072,8 @@ function loop(ts){
   else if(G.mode==='INDOOR'){
     moveInd(dx,dy,dt);
     G.indKX=G.indX-28; G.indKY=G.indY+6;
+    if(G.indLoc==='jo_house'&&(G.joDogPlayT||0)>0)
+      G.joDogPlayT=Math.max(0,G.joDogPlayT-dt);
     if(G.cooldown<=0){
       const loc=G.indLoc;
       if(loc==='may_apt'&&mayFlatAptExitTriggered()){
@@ -3950,7 +4092,7 @@ function loop(ts){
         } else {
           G.mode='EXPLORE';
           if(ih) snapOutsideMayHouse();
-          else snapOutsideJoHouse();
+          else { snapOutsideJoHouse(); G.joDogPlayT=0; }
           G.indLoc='';
           G.cooldown=0.45;updateCamera();flashScreen();
         }
@@ -3984,7 +4126,9 @@ function loop(ts){
           G.cooldown=1.0;
         }
       } else if(G.indLoc==='jo_house'){
-        G.aBtn=false;G.mode='INDOOR_TALK';G.indNpcLine=0;G.indNpcWho='jo_house';G.cooldown=1.0;
+        if((G.joDogPlayT||0)<=0){
+          G.aBtn=false;G.mode='INDOOR_TALK';G.indNpcLine=0;G.indNpcWho='jo_house';G.cooldown=1.0;
+        } else if(G.aBtn) G.aBtn=false;
       } else if(G.indLoc==='may_apt'){
         G.aBtn=false;G.mode='INDOOR_TALK';G.indNpcLine=0;G.indNpcWho='may_apt_browse';G.cooldown=1.0;
       }
@@ -4005,7 +4149,8 @@ function loop(ts){
     // Interact prompt
     r(W/2-90,H-50,180,22,'rgba(0,0,0,0.5)');
     ctx.fillStyle='rgba(200,190,160,0.7)';ctx.font='10px monospace';ctx.textAlign='center';
-    ctx.fillText(G.indLoc==='may_apt'?'SPACE: talk    \u2199 bottom-left: exit':'SPACE/ENTER: talk  \u2193 south: exit',W/2,H-33);ctx.textAlign='left';
+    const joPlaying=G.indLoc==='jo_house'&&(G.joDogPlayT||0)>0;
+    ctx.fillText(G.indLoc==='may_apt'?'SPACE: talk    \u2199 bottom-left: exit':(joPlaying?'Charlie & Kobe are playing\u2026':'SPACE/ENTER: talk  \u2193 south: exit'),W/2,H-33);ctx.textAlign='left';
     G.cooldown=Math.max(0,G.cooldown-dt);
   }
 
@@ -4035,11 +4180,12 @@ function loop(ts){
         {sp:'Sadonna', tx:'Go!! Go!! Send photos!! ☀️'},
       ],
       jo_house:[
-        {sp:'Jo', tx:'May! Shoes off — Charlie,\noff the good cushions.'},
-        {sp:'Jo', tx:'I stole Grandma\'s floor plan,\nthen stole half the living room\nfor counter space.'},
-        {sp:'May', tx:'Jo... this kitchen is enormous.'},
-        {sp:'Jo', tx:'Island dreams on a HK salary.\nEat something before you fly.'},
+        {sp:'Jo', tx:'Okay — Charlie and Kobe had their little lap.\nMay, I am so happy for you. Barcelona is huge.'},
+        {sp:'Jo', tx:'I cannot wait to come visit — galleries, beach walks,\nwhatever smells good from a bakery window.'},
+        {sp:'Jo', tx:'And I am obviously bringing Charlie.\nThat is not even a conversation.'},
+        {sp:'May', tx:'Good. Kobe needs his crew.'},
         {sp:'Charlie', tx:'Woof.'},
+        {sp:'Jo', tx:'Eat something before you fly. This kitchen did not\nsteal itself from Grandma\'s floor plan.'},
       ],
       house_browse:[
         {sp:'Grandma', tx:'Come, sit! Let me look at you!'},
@@ -4062,7 +4208,7 @@ function loop(ts){
     };
     const il=indLines[G.indNpcWho]||[{sp:'...',tx:'...'}];
     const ll=il[Math.min(G.indNpcLine,il.length-1)];
-    if(G.indNpcWho==='house_boarding_sendoff'&&G.indNpcLine===9) drawWoof(G.indX-34,G.indY);
+    if(G.indNpcWho==='house_boarding_sendoff'&&G.indNpcLine===10) drawWoof(G.indX-34,G.indY);
     else if(G.indNpcWho==='may_apt_browse'&&G.indNpcLine===2) drawWoof(G.indX-34,G.indY);
     drawDialog([ll.tx],ll.sp);
     if(G.aBtn){G.aBtn=false;G.indNpcLine++;if(G.indNpcLine>=il.length){
