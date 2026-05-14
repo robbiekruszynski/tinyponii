@@ -21,6 +21,219 @@ canvas { width:100%; height:100%; display:block; image-rendering:pixelated; imag
   <div id="flash"></div>
 </div>
 <script>
+(function(){
+  const SND_FADE_MS=800;
+
+  /** Short looping WAV (tone) so audio works before you add real MP3s under assets/music/ */
+  function makeToneWavUrl(freqHz,seconds){
+    var sr=22050;
+    var samples=Math.floor(sr*(seconds||2.5));
+    var dataSize=samples*2;
+    var buf=new ArrayBuffer(44+dataSize);
+    var v=new DataView(buf);
+    var o=0;
+    function W(s){for(var i=0;i<s.length;i++)v.setUint8(o++,s.charCodeAt(i));}
+    W('RIFF'); v.setUint32(o,36+dataSize,true); o+=4;
+    W('WAVE'); W('fmt ');
+    v.setUint32(o,16,true); o+=4;
+    v.setUint16(o,1,true); o+=2;
+    v.setUint16(o,1,true); o+=2;
+    v.setUint32(o,sr,true); o+=4;
+    v.setUint32(o,sr*2,true); o+=4;
+    v.setUint16(o,2,true); o+=2;
+    v.setUint16(o,16,true); o+=2;
+    W('data'); v.setUint32(o,dataSize,true); o+=4;
+    var amp=2200;
+    for(var i=0;i<samples;i++,o+=2){
+      var s=Math.sin(2*Math.PI*freqHz*i/sr)*amp;
+      v.setInt16(o,s,true);
+    }
+    return URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
+  }
+
+  const TONE_FALLBACK={
+    map:makeToneWavUrl(174),
+    battle:makeToneWavUrl(247),
+    grandma:makeToneWavUrl(196),
+    coffee:makeToneWavUrl(220),
+    joe:makeToneWavUrl(165),
+  };
+
+  /** Prefer MP3 files when present; on load error the tone placeholder above is used */
+  const TRACK_FILES={
+    map:'assets/music/map.mp3',
+    battle:'assets/music/battle.mp3',
+    grandma:'assets/music/grandma.mp3',
+    coffee:'assets/music/coffee.mp3',
+    joe:'assets/music/joe.mp3',
+  };
+
+  window.soundtrack=window.soundtrack||{};
+  window.soundtrack.TRACK_FILES=TRACK_FILES;
+
+  const baseVolume=new Map(Object.keys(TRACK_FILES).map(function(id){return[id,id==='map'?0.45:0.55];}));
+  const pool=new Map();
+  var activeId=null,fadeIn=null,fadeOut=null,raf=0,lastApplied='';
+
+  function bv(id){var x=baseVolume.get(id);return x==null?0.5:x;}
+
+  function ensureAudio(id){
+    if(!TRACK_FILES[id])return null;
+    var a=pool.get(id);
+    if(!a){
+      a=new Audio(TRACK_FILES[id]);
+      a.loop=true;
+      a.preload='auto';
+      a.dataset.trackId=id;
+      pool.set(id,a);
+      a.addEventListener('error',function(){
+        var tid=a.dataset.trackId;
+        if(!tid||a.dataset.useTone)return;
+        a.dataset.useTone='1';
+        console.warn('[soundtrack] Missing or blocked MP3 — using placeholder tone. Add file:',TRACK_FILES[tid]);
+        try{a.pause();}catch(_){}
+        a.src=TONE_FALLBACK[tid]||TONE_FALLBACK.map;
+        a.load();
+        if(activeId===tid){safePlay(a);}
+      });
+    }
+    return a;
+  }
+
+  function clamp01(x){return Math.max(0,Math.min(1,x));}
+
+  function tickFades(now){
+    now=now||performance.now();
+    if(fadeOut){
+      var u=fadeOut.dur<=0?1:clamp01((now-fadeOut.t0)/fadeOut.dur);
+      fadeOut.audio.volume=clamp01(fadeOut.fromVol+(fadeOut.toVol-fadeOut.fromVol)*u);
+      if(u>=1){fadeOut.audio.pause();fadeOut.audio.currentTime=0;fadeOut=null;}
+    }
+    if(fadeIn){
+      var v=fadeIn.dur<=0?1:clamp01((now-fadeIn.t0)/fadeIn.dur);
+      fadeIn.audio.volume=clamp01(fadeIn.fromVol+(fadeIn.toVol-fadeIn.fromVol)*v);
+      if(v>=1)fadeIn=null;
+    }
+    if(fadeIn||fadeOut)raf=requestAnimationFrame(function(){tickFades();});else raf=0;
+  }
+
+  function startFadeLoop(){if(!raf)raf=requestAnimationFrame(function(){tickFades();});}
+
+  function safePlay(audio){
+    var pr=audio.play();
+    if(pr&&typeof pr.then==='function'){
+      pr.then(function(){window.__tinyponiiNeedGestureResume=false;}).catch(function(){window.__tinyponiiNeedGestureResume=true;});
+    }else{
+      window.__tinyponiiNeedGestureResume=false;
+    }
+  }
+
+  function transitionTo(id,fadeMs){
+    fadeMs=fadeMs==null?SND_FADE_MS:fadeMs;
+    var audio=ensureAudio(id);if(!audio)return;
+    if(activeId===id&&!fadeOut){audio.volume=clamp01(bv(id));safePlay(audio);return;}
+    var dur=Math.max(0,fadeMs|0);
+    if(activeId&&activeId!==id){
+      var prev=pool.get(activeId);
+      if(prev&&!prev.paused){fadeOut={audio:prev,fromVol:prev.volume,toVol:0,t0:performance.now(),dur:dur};}
+    }
+    fadeIn=null;
+    var targetBase=bv(id);
+    audio.volume=dur<=0?targetBase:0;
+    safePlay(audio);
+    fadeIn={audio:audio,fromVol:audio.volume,toVol:targetBase,t0:performance.now(),dur:dur};
+    activeId=id;
+    startFadeLoop();
+  }
+
+  function stopAll(fadeMs){
+    fadeMs=fadeMs==null?400:fadeMs;
+    if(!activeId)return;
+    var prev=pool.get(activeId);
+    activeId=null;fadeIn=null;
+    if(prev&&!prev.paused){
+      fadeOut={audio:prev,fromVol:prev.volume,toVol:0,t0:performance.now(),dur:fadeMs};
+      startFadeLoop();
+    }
+  }
+
+  function desiredTrackForState(G){
+    var m=G.mode,loc=G.indLoc||'';
+    if(m==='TITLE'||m==='INTRO')return null;
+    if(m==='EXPLORE'||m==='NPC_TALK')return'map';
+    if(m==='BATTLE')return'battle';
+    if(m==='CAVE'||m==='BOARDING')return'map';
+    if(m==='FAREWELL')return'grandma';
+    if(m==='CAB_FAREWELL')return'map';
+    if(m==='AIRPORT')return'map';
+    if(m==='TAKEOFF'||m==='KOBE_PILOT'||m==='CREDITS')return null;
+    if(m==='INDOOR'||m==='INDOOR_TALK'){
+      if(loc==='cafe')return'coffee';
+      if(loc==='house')return'grandma';
+      if(loc==='jo_house'||loc==='may_apt')return'joe';
+      return'map';
+    }
+    return'map';
+  }
+
+  function musicStateKey(G,want){
+    return G.mode+'|'+(G.indLoc||'')+'|'+(want==null?'_':want);
+  }
+
+  function syncMusicImpl(G,fadeMs){
+    fadeMs=fadeMs==null?SND_FADE_MS:fadeMs;
+    var want=desiredTrackForState(G);
+    var key=musicStateKey(G,want);
+    if(key===lastApplied&&!window.__tinyponiiNeedGestureResume)return;
+    lastApplied=key;
+    if(want==null){
+      stopAll(fadeMs);
+      window.__tinyponiiNeedGestureResume=false;
+      return;
+    }
+    transitionTo(want,fadeMs);
+  }
+
+  function unlockAudio(){
+    if(unlockAudio._done)return;
+    unlockAudio._done=true;
+    try{
+      var AC=window.AudioContext||window.webkitAudioContext;
+      if(AC){var ctx=new AC();if(ctx.state==='suspended')ctx.resume();ctx.close&&ctx.close();}
+    }catch(e){}
+  }
+
+  /** Call from a user-gesture handler so HTMLAudioElement.play() is allowed */
+  function primeMusicFromGesture(){
+    unlockAudio();
+    if(typeof G==='undefined'||!window.__tinyponiiSyncMusic)return;
+    var want=desiredTrackForState(G);
+    var blocked=!!window.__tinyponiiNeedGestureResume;
+    var aud=activeId?pool.get(activeId):null;
+    var stalled=want!=null&&aud!=null&&aud.paused;
+    if(blocked||stalled){
+      lastApplied='';
+      window.__tinyponiiSyncMusic(G, 0);
+    }
+  }
+
+  window.soundtrack=Object.assign(window.soundtrack,{
+    TRACK_SRC:TRACK_FILES,
+    playTrack:function(id){transitionTo(id,0);},
+    stopTrack:function(id){var x=pool.get(id);if(!x)return;if(activeId===id)activeId=null;x.pause();x.currentTime=0;},
+    stopAll:stopAll,
+    setVolume:function(id,v){baseVolume.set(id,clamp01(v));if(activeId===id){var z=pool.get(id);if(z)z.volume=clamp01(v);}},
+    transitionTo:transitionTo,
+    syncMusic:syncMusicImpl,
+    desiredTrackForState:desiredTrackForState,
+    unlock:unlockAudio,
+    primeMusicFromGesture:primeMusicFromGesture,
+    resetMusicState:function(){lastApplied='';}
+  });
+
+  window.__tinyponiiSyncMusic=syncMusicImpl;
+})();
+function syncMusic(G,f){if(window.__tinyponiiSyncMusic)return window.__tinyponiiSyncMusic(G,f);}
 // ============================================================
 // 1. CONSTANTS & CONFIG
 // ============================================================
@@ -534,6 +747,8 @@ const DIALOG_DAD_PORTRAIT=new Image();
 DIALOG_DAD_PORTRAIT.src='assets/dad.png';
 const DIALOG_JO_PORTRAIT=new Image();
 DIALOG_JO_PORTRAIT.src='assets/jo.png';
+const DIALOG_DODO_PORTRAIT=new Image();
+DIALOG_DODO_PORTRAIT.src='assets/dodo.png';
 /** Jo's dog — dialog portrait + world sprite */
 const CHARLIE_IMG=new Image();
 CHARLIE_IMG.src='assets/charlie.png';
@@ -3773,6 +3988,7 @@ function drawDialog(lines,speaker='',opts){
   else if(nl==='dad') portraitImg=DIALOG_DAD_PORTRAIT;
   else if(nl==='jo') portraitImg=DIALOG_JO_PORTRAIT;
   else if(nl==='charlie') portraitImg=CHARLIE_IMG;
+  else if(nl==='dodo') portraitImg=DIALOG_DODO_PORTRAIT;
   const PW=96, PH=96;
 
   let textLeft=bx+16;
@@ -4929,20 +5145,136 @@ function drawRunwayPlane(px,py){
 }
 
 function drawCredits(){
-  r(0,0,W,H,C.black);
+  const tk=G.tick;
   const a=Math.min(1,G.credTimer/1.8);
   ctx.save();ctx.globalAlpha=a;
-  r(0,0,W,H*0.4,'#c85020');
-  r(0,H*0.4,W,H*0.6,'#e8c898');
-  ctx.fillStyle='#f8d030';ctx.beginPath();ctx.arc(W/2+150,55,45,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='#1a1020';
-  const bs=[[0,H-80,60,80],[50,H-120,80,120],[140,H-70,50,70],[180,H-110,70,110],[280,H-150,90,150],[370,H-90,60,90],[550,H-110,100,110],[610,H-80,30,80]];
-  for(const[bx,by,bw,bh]of bs)r(bx,by,bw,bh,'#1a1020');
+
+  const horizon=Math.floor(H*0.42);
+  const seaEnd=Math.floor(H*0.70);
+  const shoreY=seaEnd;
+
+  // ── Warm Mediterranean sunset sky ──
+  const skyG=ctx.createLinearGradient(0,0,0,horizon+22);
+  skyG.addColorStop(0,'#ffb898');
+  skyG.addColorStop(0.28,'#ff8868');
+  skyG.addColorStop(0.55,'#e85868');
+  skyG.addColorStop(1,'#c83858');
+  ctx.fillStyle=skyG;
+  ctx.fillRect(0,0,W,horizon+18);
+
+  // Sun sitting low toward the sea
+  const sunX=Math.floor(W*0.74), sunY=Math.floor(H*0.34), sunR=38;
+  const glow=ctx.createRadialGradient(sunX,sunY,6,sunX,sunY,sunR+52);
+  glow.addColorStop(0,'rgba(255,248,220,0.95)');
+  glow.addColorStop(0.2,'rgba(255,210,120,0.55)');
+  glow.addColorStop(0.45,'rgba(255,140,90,0.22)');
+  glow.addColorStop(1,'rgba(255,100,80,0)');
+  ctx.fillStyle=glow;
+  ctx.beginPath();ctx.arc(sunX,sunY,sunR+52,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#ffe890';
+  ctx.beginPath();ctx.arc(sunX,sunY,sunR,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(255,255,240,0.55)';
+  ctx.beginPath();ctx.arc(sunX-8,sunY-6,sunR*0.22,0,Math.PI*2);ctx.fill();
+
+  // Distant city ridge on horizon (Barcelona silhouette hint — no heavy blocks)
+  ctx.fillStyle='rgba(28,36,58,0.45)';
+  const ridge=[
+    [14,18],[28,28],[44,14],[58,24],[76,32],[102,16],[124,36],[148,22],[178,40],[204,18],[232,34],[258,26],[288,42],[318,20],[348,38],[382,24],[412,46],[448,22],[482,36],[518,28],[552,40],[588,24],[618,32],[602,18],
+  ];
+  for(const[bx,rh] of ridge){
+    const bw=Math.max(5,Math.floor(rh*0.12)+5);
+    ctx.fillRect(bx,horizon-rh,bw,rh+10);
+  }
+
+  // ── Sea (rolling bands + foam) ──
+  const seaG=ctx.createLinearGradient(0,horizon-4,0,seaEnd+14);
+  seaG.addColorStop(0,'#6ad8e8');
+  seaG.addColorStop(0.22,'#42b8d8');
+  seaG.addColorStop(0.55,'#2a8898');
+  seaG.addColorStop(0.82,'#1a5868');
+  seaG.addColorStop(1,'#143848');
+  ctx.fillStyle=seaG;
+  ctx.fillRect(0,horizon-6,W,seaEnd-horizon+24);
+
+  // Sun-path shimmer on water
+  ctx.save();ctx.globalAlpha=0.18;
+  const shim=ctx.createLinearGradient(sunX-90,horizon,sunX+90,seaEnd);
+  shim.addColorStop(0,'rgba(255,220,160,0)');
+  shim.addColorStop(0.45,'rgba(255,230,200,0.55)');
+  shim.addColorStop(1,'rgba(255,220,160,0)');
+  ctx.fillStyle=shim;
+  ctx.beginPath();
+  ctx.moveTo(sunX-56,horizon);
+  ctx.lineTo(sunX+56,horizon);
+  ctx.lineTo(sunX+110,seaEnd-8);
+  ctx.lineTo(sunX-110,seaEnd-8);
+  ctx.closePath();ctx.fill();
+  ctx.restore();
+
+  ctx.strokeStyle='rgba(255,255,255,0.14)';
+  ctx.lineWidth=1;
+  for(let i=0;i<14;i++){
+    const wy=horizon+10+i*15+Math.sin(tk*0.038+i*0.7)*4;
+    ctx.beginPath();
+    ctx.moveTo(-20,wy);
+    ctx.quadraticCurveTo(W/2,wy+3+(i%3),W+20,wy);
+    ctx.stroke();
+  }
+
+  // Breaking foam line
+  ctx.strokeStyle='rgba(255,252,248,0.42)';
+  ctx.lineWidth=2;
+  ctx.beginPath();
+  let fx=0;
+  ctx.moveTo(fx,shoreY-6+Math.sin(tk*0.06)*3);
+  while(fx<W+40){
+    fx+=24;
+    ctx.lineTo(fx,shoreY-6+Math.sin(fx*0.09+tk*0.06)*3);
+  }
+  ctx.stroke();
+
+  // ── Wet sand → dry beach ──
+  const wetSandH=26;
+  const wetG=ctx.createLinearGradient(0,shoreY-wetSandH,0,shoreY+wetSandH);
+  wetG.addColorStop(0,'#9a7858');
+  wetG.addColorStop(0.55,'#c8a070');
+  wetG.addColorStop(1,'#dcb078');
+  ctx.fillStyle=wetG;
+  ctx.fillRect(0,shoreY-wetSandH,W,wetSandH+14);
+
+  const sandTop=shoreY+10;
+  const sandG=ctx.createLinearGradient(0,sandTop,0,H);
+  sandG.addColorStop(0,'#e8c078');
+  sandG.addColorStop(0.45,'#e8b868');
+  sandG.addColorStop(1,'#d89848');
+  ctx.fillStyle=sandG;
+  ctx.fillRect(0,sandTop,W,H-sandTop);
+
+  // Speckled sand texture
+  for(let i=0;i<95;i++){
+    const gx=(i*97+tk)%W;
+    const gy=sandTop+14+(i*53)%(H-sandTop-28);
+    r(gx,gy,2,1,'rgba(160,110,50,0.22)');
+    if(i%3===0) r(gx+4,gy+3,1,1,'rgba(200,170,120,0.35)');
+  }
+
+  // Two minimal palms framing the sand
+  function palmLeft(px,py){
+    r(px+10,py+44,6,28,'#5a4030');
+    r(px+2,py+12,22,8,'#287038'); r(px+16,py+4,18,8,'#287038'); r(px-4,py+18,14,7,'#206028');
+  }
+  function palmRight(px,py){
+    r(px+24,py+44,6,28,'#5a4030');
+    r(px+8,py+12,22,8,'#287038'); r(px,py+4,18,8,'#287038'); r(px+30,py+18,14,7,'#206028');
+  }
+  palmLeft(18,H-112);
+  palmRight(W-62,H-112);
+
   ctx.save();ctx.translate(W/2-154,H/2-118);ctx.scale(3,3);drawMay(0,0,G.tick,'down');ctx.restore();
   ctx.save();ctx.translate(W/2+86,H/2-74);ctx.scale(2,2);drawKobe(0,0,G.tick);ctx.restore();
+
   ctx.textAlign='center';
   ctx.lineJoin='round';
-  // High-contrast labels on tan sand — stroke so text stays readable everywhere
   function credLine(txt,y,font,fill,stroke,lw){
     ctx.font=font;
     ctx.lineWidth=lw;
@@ -4952,12 +5284,10 @@ function drawCredits(){
     ctx.fillText(txt,W/2,y);
   }
   credLine('May & Kobe',H/2+38,'bold 26px monospace','#fffef8','#1e1410',6);
-  credLine('Barcelona bound. \uD83D\uDC3E',H/2+66,'bold 17px monospace','#2a4868','#f8f2e8',5);
-  ctx.font='12px monospace';
-  credLine('Thanks for playing.',H/2+108,'12px monospace','#fdf8ee','#120c08',3);
+  credLine('Barcelona bound. \uD83D\uDC3E',H/2+74,'bold 17px monospace','#1a5088','#f8f4e8',5);
   if(G.credTimer>3){
     ctx.globalAlpha=a*Math.min(1,(G.credTimer-3)*0.6);
-    credLine('Press SPACE to restart',H/2+148,'12px monospace','#ffffff','#1a1018',3);
+    credLine('Press SPACE to restart',H/2+126,'12px monospace','#ffffff','#1a1018',3);
     ctx.globalAlpha=a;
   }
   ctx.textAlign='left';ctx.restore();
@@ -5676,9 +6006,20 @@ function loop(ts){
     }
   }
 
+  syncMusic(G);
   G.aBtn=false;
   requestAnimationFrame(loop);
 }
+
+(function(){
+  document.addEventListener('keydown',function(e){
+    if(e.repeat)return;
+    if(window.soundtrack&&window.soundtrack.primeMusicFromGesture)window.soundtrack.primeMusicFromGesture();
+  },{capture:true});
+  document.addEventListener('pointerdown',function(){
+    if(window.soundtrack&&window.soundtrack.primeMusicFromGesture)window.soundtrack.primeMusicFromGesture();
+  },{capture:true});
+})();
 
 requestAnimationFrame(ts=>{lastT=ts;requestAnimationFrame(loop);});
 </script>
