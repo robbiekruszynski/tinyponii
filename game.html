@@ -21,152 +21,359 @@ canvas { width:100%; height:100%; display:block; image-rendering:pixelated; imag
   <div id="flash"></div>
 </div>
 <script>
+// ============================================================
+// SOUNDTRACK — Web Audio API (no mp3 files needed)
+// Tracks: map | battle | grandma | coffee | joe
+// joe plays on: TITLE, INTRO, AIRPORT, TAKEOFF, KOBE_PILOT, CREDITS
+//               + jo_house, may_apt interiors
+// ============================================================
 (function(){
-  const SND_FADE_MS=800;
+  var AC=null,activeId=null,lastApplied='';
+  var _gains={},_playing={},_timers={},_nextTime={};
+  var SND_FADE_MS=800;
 
-  /** Short looping WAV (tone) so audio works before you add real MP3s under assets/music/ */
-  function makeToneWavUrl(freqHz,seconds){
-    var sr=22050;
-    var samples=Math.floor(sr*(seconds||2.5));
-    var dataSize=samples*2;
-    var buf=new ArrayBuffer(44+dataSize);
-    var v=new DataView(buf);
-    var o=0;
-    function W(s){for(var i=0;i<s.length;i++)v.setUint8(o++,s.charCodeAt(i));}
-    W('RIFF'); v.setUint32(o,36+dataSize,true); o+=4;
-    W('WAVE'); W('fmt ');
-    v.setUint32(o,16,true); o+=4;
-    v.setUint16(o,1,true); o+=2;
-    v.setUint16(o,1,true); o+=2;
-    v.setUint32(o,sr,true); o+=4;
-    v.setUint32(o,sr*2,true); o+=4;
-    v.setUint16(o,2,true); o+=2;
-    v.setUint16(o,16,true); o+=2;
-    W('data'); v.setUint32(o,dataSize,true); o+=4;
-    var amp=2200;
-    for(var i=0;i<samples;i++,o+=2){
-      var s=Math.sin(2*Math.PI*freqHz*i/sr)*amp;
-      v.setInt16(o,s,true);
-    }
-    return URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
+  function getAC(){
+    if(!AC)AC=new(window.AudioContext||window.webkitAudioContext)();
+    if(AC.state==='suspended')AC.resume();
+    return AC;
   }
 
-  const TONE_FALLBACK={
-    map:makeToneWavUrl(174),
-    battle:makeToneWavUrl(247),
-    grandma:makeToneWavUrl(196),
-    coffee:makeToneWavUrl(220),
-    joe:makeToneWavUrl(165),
-  };
-
-  /** Prefer MP3 files when present; on load error the tone placeholder above is used */
-  const TRACK_FILES={
-    map:'assets/music/map.mp3',
-    battle:'assets/music/battle.mp3',
-    grandma:'assets/music/grandma.mp3',
-    coffee:'assets/music/coffee.mp3',
-    joe:'assets/music/joe.mp3',
-  };
-
-  window.soundtrack=window.soundtrack||{};
-  window.soundtrack.TRACK_FILES=TRACK_FILES;
-
-  const baseVolume=new Map(Object.keys(TRACK_FILES).map(function(id){return[id,id==='map'?0.45:0.55];}));
-  const pool=new Map();
-  var activeId=null,fadeIn=null,fadeOut=null,raf=0,lastApplied='';
-
-  function bv(id){var x=baseVolume.get(id);return x==null?0.5:x;}
-
-  function ensureAudio(id){
-    if(!TRACK_FILES[id])return null;
-    var a=pool.get(id);
-    if(!a){
-      a=new Audio(TRACK_FILES[id]);
-      a.loop=true;
-      a.preload='auto';
-      a.dataset.trackId=id;
-      pool.set(id,a);
-      a.addEventListener('error',function(){
-        var tid=a.dataset.trackId;
-        if(!tid||a.dataset.useTone)return;
-        a.dataset.useTone='1';
-        console.warn('[soundtrack] Missing or blocked MP3 — using placeholder tone. Add file:',TRACK_FILES[tid]);
-        try{a.pause();}catch(_){}
-        a.src=TONE_FALLBACK[tid]||TONE_FALLBACK.map;
-        a.load();
-        if(activeId===tid){safePlay(a);}
-      });
+  // ── shared note primitives ───────────────────────────────────────────────
+  function _n(master,freq,start,dur,type,vol,cut){
+    if(!freq||dur<=0.001)return;
+    var o=AC.createOscillator(),g=AC.createGain();
+    o.type=type;o.frequency.value=freq;
+    if(cut){var f=AC.createBiquadFilter();f.type='lowpass';f.frequency.value=cut;o.connect(f);f.connect(g);}
+    else o.connect(g);
+    g.connect(master);
+    // Safe envelope — attack 10% of dur, release 15%, min 8ms each
+    var att=Math.max(0.008,dur*0.10);
+    var rel=Math.max(0.012,dur*0.15);
+    var sus=start+att;
+    var relStart=Math.max(sus+0.001,start+dur-rel);
+    g.gain.setValueAtTime(0.001,start);
+    g.gain.linearRampToValueAtTime(vol,sus);
+    g.gain.setValueAtTime(vol,relStart);
+    g.gain.linearRampToValueAtTime(0.0001,start+dur+0.005);
+    o.start(start);o.stop(start+dur+0.02);
+    return o;
+  }
+  function _kick(master,t,v){
+    var o=AC.createOscillator(),g=AC.createGain();
+    o.type='sine';
+    o.frequency.setValueAtTime(160,t);o.frequency.exponentialRampToValueAtTime(40,t+0.14);
+    g.gain.setValueAtTime(v||0.75,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.18);
+    o.connect(g);g.connect(master);o.start(t);o.stop(t+0.2);return o;
+  }
+  function _snare(master,t,v){
+    var len=Math.floor(AC.sampleRate*0.12);
+    var buf=AC.createBuffer(1,len,AC.sampleRate);
+    var d=buf.getChannelData(0);for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+    var src=AC.createBufferSource(),f=AC.createBiquadFilter(),g=AC.createGain();
+    f.type='highpass';f.frequency.value=1500;
+    g.gain.setValueAtTime(v||0.32,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.11);
+    src.buffer=buf;src.connect(f);f.connect(g);g.connect(master);
+    src.start(t);src.stop(t+0.13);return src;
+  }
+  function _hat(master,t,v,dur){
+    var dl=Math.floor(AC.sampleRate*(dur||0.03));
+    var buf=AC.createBuffer(1,dl,AC.sampleRate);
+    var d=buf.getChannelData(0);for(var i=0;i<dl;i++)d[i]=Math.random()*2-1;
+    var src=AC.createBufferSource(),f=AC.createBiquadFilter(),g=AC.createGain();
+    f.type='highpass';f.frequency.value=7000;
+    g.gain.setValueAtTime(v||0.09,t);g.gain.exponentialRampToValueAtTime(0.001,t+(dur||0.03));
+    src.buffer=buf;src.connect(f);f.connect(g);g.connect(master);
+    src.start(t);src.stop(t+(dur||0.03)+0.01);return src;
+  }
+  function _schedNotes(notes,master,beatLen,startTime,reps,type,vol,cut){
+    var nodes=[],totalLen=0;
+    for(var i=0;i<notes.length;i++)totalLen+=notes[i][1]*beatLen;
+    for(var r=0;r<reps;r++){
+      var t=startTime+r*totalLen;
+      for(var i=0;i<notes.length;i++){
+        var freq=notes[i][0],dur=notes[i][1]*beatLen;
+        if(freq){
+          var nd=_n(master,freq,t,dur*0.85,type,vol,cut);
+          if(nd)nodes.push(nd);
+        }
+        t+=dur; // always advance time, whether rest or note
+      }
     }
-    return a;
+    return nodes;
   }
 
-  function clamp01(x){return Math.max(0,Math.min(1,x));}
-
-  function tickFades(now){
-    now=now||performance.now();
-    if(fadeOut){
-      var u=fadeOut.dur<=0?1:clamp01((now-fadeOut.t0)/fadeOut.dur);
-      fadeOut.audio.volume=clamp01(fadeOut.fromVol+(fadeOut.toVol-fadeOut.fromVol)*u);
-      if(u>=1){fadeOut.audio.pause();fadeOut.audio.currentTime=0;fadeOut=null;}
+  // ── shared refill scheduler ──────────────────────────────────────────────
+  function _makeRefillTrack(id,master,nodes,patterns,drumFn){
+    var AHEAD=8,REFILL_AT=3;
+    // find longest pattern cycle
+    var cycleLen=0;
+    for(var p=0;p<patterns.length;p++){
+      var pat=patterns[p],plen=0;
+      for(var i=0;i<pat.notes.length;i++)plen+=pat.notes[i][1]*pat.beat;
+      if(plen>cycleLen)cycleLen=plen;
     }
-    if(fadeIn){
-      var v=fadeIn.dur<=0?1:clamp01((now-fadeIn.t0)/fadeIn.dur);
-      fadeIn.audio.volume=clamp01(fadeIn.fromVol+(fadeIn.toVol-fadeIn.fromVol)*v);
-      if(v>=1)fadeIn=null;
+    function schedChunk(fromT,ahead){
+      var t=fromT,endT=fromT+ahead;
+      while(t<endT){
+        for(var p=0;p<patterns.length;p++){
+          var pat=patterns[p],tt=t;
+          for(var i=0;i<pat.notes.length;i++){
+            var freq=pat.notes[i][0],dur=pat.notes[i][1]*pat.beat;
+            if(freq){var nd=_n(master,freq,tt,dur*(pat.gate||0.82),pat.type,pat.vol,pat.cut);if(nd)nodes.push(nd);}
+            tt+=dur;
+          }
+        }
+        if(drumFn)drumFn(t,cycleLen,nodes,master);
+        t+=cycleLen;
+      }
+      return t;
     }
-    if(fadeIn||fadeOut)raf=requestAnimationFrame(function(){tickFades();});else raf=0;
+    var startT=AC.currentTime+0.08;
+    _nextTime[id]=schedChunk(startT,AHEAD);
+    _timers[id]=setInterval(function(){
+      if(!_gains[id])return;
+      if(_nextTime[id]-AC.currentTime<REFILL_AT)_nextTime[id]=schedChunk(_nextTime[id],AHEAD);
+    },1000);
   }
 
-  function startFadeLoop(){if(!raf)raf=requestAnimationFrame(function(){tickFades();});}
+  // ── track builders ───────────────────────────────────────────────────────
 
-  function safePlay(audio){
-    var pr=audio.play();
-    if(pr&&typeof pr.then==='function'){
-      pr.then(function(){window.__tinyponiiNeedGestureResume=false;}).catch(function(){window.__tinyponiiNeedGestureResume=true;});
-    }else{
-      window.__tinyponiiNeedGestureResume=false;
-    }
+  // 1. MAP — Hong Kong Nights: C pentatonic, neon pulse, sawtooth counter
+  function _buildMap(master){
+    var B=0.25,nodes=[];
+    var C3=130.81,G3=196,A3=220,C4=261.63,D4=293.66,E4=329.63,G4=392,A4=440,C5=523.25,D5=587.33,E5=659.25,G5=783.99;
+    _makeRefillTrack('map',master,nodes,[
+      {beat:B,type:'square',vol:0.26,cut:1200,gate:0.88,notes:[[E4,1],[G4,1],[A4,2],[G4,1],[E4,1],[D4,2],[C4,1],[E4,1],[G4,1],[A4,1],[G4,2],[E4,2],[A4,1],[C5,1],[D5,2],[C5,1],[A4,1],[G4,2],[E4,1],[G4,1],[A4,1],[G4,1],[E4,2],[C4,2],[G4,1],[A4,1],[C5,1],[D5,1],[E5,2],[D5,1],[C5,1],[A4,2],[G4,2],[E4,2],[C4,2]]},
+      {beat:B,type:'sawtooth',vol:0.13,cut:900,gate:0.70,notes:[[C5,0.5],[0,0.5],[G4,0.5],[0,0.5],[A4,1],[0,1],[E4,1],[0,1],[G4,0.5],[0,0.5],[A4,0.5],[0,0.5],[C5,1],[0,1],[G4,2],[A4,0.5],[0,0.5],[C5,0.5],[0,0.5],[D5,1],[C5,1],[A4,2],[0,2]]},
+      {beat:B,type:'square',vol:0.26,cut:500,gate:0.75,notes:[[C3,0.5],[0,1.5],[G3,0.5],[0,0.5],[C3,0.5],[0,1],[A3,0.5],[0,1],[C3,0.5],[0,1.5],[G3,0.5],[0,0.5],[A3,0.5],[0,1],[G3,0.5],[0,1]]},
+      {beat:B,type:'sine',vol:0.11,cut:2000,gate:0.80,notes:[[C5,0.5],[E5,0.5],[G5,0.5],[E5,0.5],[C5,0.5],[0,3]]}
+    ],null);
+    return nodes;
   }
 
-  function transitionTo(id,fadeMs){
-    fadeMs=fadeMs==null?SND_FADE_MS:fadeMs;
-    var audio=ensureAudio(id);if(!audio)return;
-    if(activeId===id&&!fadeOut){audio.volume=clamp01(bv(id));safePlay(audio);return;}
-    var dur=Math.max(0,fadeMs|0);
-    if(activeId&&activeId!==id){
-      var prev=pool.get(activeId);
-      if(prev&&!prev.paused){fadeOut={audio:prev,fromVol:prev.volume,toVol:0,t0:performance.now(),dur:dur};}
+  // 2a. BATTLE — Decisive Battle (FF6 style), used for all encounters except Naked Man
+  function _buildBattle(master){
+    var B=0.095,nodes=[];
+    var C3=130.81,Eb3=155.56,G3=196,Ab3=207.65,Bb3=233.08;
+    var Eb4=311.13,F4=349.23,G4=392,Ab4=415.3,Bb4=466.16,C5=523.25,D5=587.33,Eb5=622.25;
+    var KICK=[1,0,0,0,1,0,0,0,1,0,0,1,1,0,0,0];
+    var SNARE=[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0];
+    var HAT=[1,1,0,1,1,1,0,1,1,1,0,1,1,1,0,1];
+    function drumFn(fromT,cycLen,nodes,master){
+      var t=fromT,end=fromT+cycLen,barLen=B*8;
+      while(t<end){for(var i=0;i<16;i++){var bt=t+i*B*0.5;if(KICK[i])nodes.push(_kick(master,bt,0.75));if(SNARE[i])nodes.push(_snare(master,bt));if(HAT[i])nodes.push(_hat(master,bt));}t+=barLen;}
     }
-    fadeIn=null;
-    var targetBase=bv(id);
-    audio.volume=dur<=0?targetBase:0;
-    safePlay(audio);
-    fadeIn={audio:audio,fromVol:audio.volume,toVol:targetBase,t0:performance.now(),dur:dur};
+    _makeRefillTrack('battle',master,nodes,[
+      {beat:B,type:'sawtooth',vol:0.24,cut:1400,gate:0.78,notes:[
+        [Eb4,1],[0,1],[Eb4,1],[0,1],[Bb4,1],[0,1],[Ab4,2],[0,2],[G4,1],[0,1],
+        [Eb4,1],[0,1],[Eb4,1],[0,1],[F4,1],[0,1],[G4,2],[0,2],[F4,1],[0,1],
+        [Eb4,1],[0,1],[Eb4,1],[0,1],[Bb4,1],[0,1],[Ab4,2],[0,2],[G4,1],[0,1],
+        [Eb5,2],[D5,1],[C5,1],[Bb4,2],[Ab4,2],[G4,4]
+      ]},
+      {beat:B,type:'square',vol:0.16,cut:900,gate:0.82,notes:[
+        [C3,2],[0,2],[Bb3,2],[0,2],[Ab3,2],[0,2],[G3,2],[0,2],
+        [C3,2],[0,2],[Bb3,2],[0,2],[Ab3,4],[G3,4]
+      ]},
+      {beat:B,type:'square',vol:0.22,cut:500,gate:0.88,notes:[
+        [C3,2],[0,2],[C3,2],[0,2],[Eb3,2],[0,2],[Bb3/2*2,2],[0,2],
+        [Ab3/2*2,2],[0,2],[G3/2*2,2],[0,2],[C3,4],[0,4]
+      ]}
+    ],drumFn);
+    return nodes;
+  }
+
+  // 2b. BATTLE_NAKED — Prelude to Battle (FF4/5 style), Naked Man only
+  function _buildBattleNaked(master){
+    var B=0.11,nodes=[];
+    var C3=130.81,F3=174.61,G3=196,Ab3=207.65,Bb3=233.08;
+    var C4=261.63,D4=293.66,Eb4=311.13,F4=349.23,G4=392,Ab4=415.3,Bb4=466.16,C5=523.25,D5=587.33,Eb5=622.25;
+    var KICK=[1,0,0,1,1,0,0,0,1,0,0,1,1,0,1,0];
+    var SNARE=[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0];
+    var HAT=[1,0,1,1,0,1,1,0,1,0,1,1,0,1,1,0];
+    function drumFn(fromT,cycLen,nodes,master){
+      var t=fromT,end=fromT+cycLen,barLen=B*8;
+      while(t<end){for(var i=0;i<16;i++){var bt=t+i*B*0.5;if(KICK[i])nodes.push(_kick(master,bt,0.80));if(SNARE[i])nodes.push(_snare(master,bt,0.42));if(HAT[i])nodes.push(_hat(master,bt,0.10));}t+=barLen;}
+    }
+    _makeRefillTrack('battle_naked',master,nodes,[
+      {beat:B,type:'square',vol:0.22,cut:1600,gate:0.80,notes:[
+        [C5,2],[Bb4,1],[Ab4,1],[G4,2],[F4,1],[Eb4,1],
+        [D4,2],[Eb4,1],[F4,1],[G4,2],[Ab4,2],
+        [Bb4,1],[0,1],[Bb4,1],[0,1],[C5,1],[Bb4,1],[Ab4,2],[0,2],
+        [G4,1],[0,1],[G4,1],[0,1],[Ab4,1],[G4,1],[F4,2],[Eb4,2]
+      ]},
+      {beat:B,type:'triangle',vol:0.16,cut:1000,gate:0.85,notes:[
+        [Eb4,4],[D4,4],[C4,4],[Bb3,4],
+        [C4,2],[0,2],[Bb3,2],[0,2],[Ab3,4],[G3,4]
+      ]},
+      {beat:B,type:'square',vol:0.24,cut:480,gate:0.90,notes:[
+        [C3,4],[Bb3/2*2,4],[Ab3/2*2,4],[G3/2*2,4],
+        [C3,2],[0,2],[F3,2],[0,2],[G3,2],[0,2],[C3,2],[0,2]
+      ]}
+    ],drumFn);
+    return nodes;
+  }
+
+  // 2c. FANFARE — Classic FF victory, plays once then stops
+  function _buildFanfare(master){
+    var B=0.12,nodes=[];
+    var C4=261.63,Eb4=311.13,F4=349.23,G4=392,Ab4=415.3,Bb4=466.16,C5=523.25,Db5=554.37,Eb5=622.25,G5=783.99;
+    // The classic: G G G Eb(long) Bb Eb G
+    var mel=[
+      [G4,0.5],[G4,0.5],[G4,0.5],[Eb5,3],[Bb4,1.5],[Eb5,0.5],[G5,4],
+      [G4,0.5],[G4,0.5],[G4,0.5],[F4,3],[Ab4,1.5],[C5,0.5],[Eb5,4],
+      [G5,0.5],[Eb5,0.5],[G5,2],[F4,0.5],[Eb5,0.5],[G5,0.5],[0,0.5],[Eb5,0.5],[0,0.5],[Bb4,0.5],[0,0.5],[C5,6]
+    ];
+    var harm=[
+      [Eb4,0.5],[Eb4,0.5],[Eb4,0.5],[C5,3],[G4,1.5],[C5,0.5],[Eb5,4],
+      [Eb4,0.5],[Eb4,0.5],[Eb4,0.5],[Db5,3],[F4,1.5],[Ab4,0.5],[C5,4],
+      [Eb5,0.5],[C5,0.5],[Eb5,2],[Db5,0.5],[C5,0.5],[Eb5,0.5],[0,0.5],[C5,0.5],[0,0.5],[G4,0.5],[0,0.5],[Ab4,6]
+    ];
+    var t=AC.currentTime+0.05;
+    var tt=t;
+    for(var i=0;i<mel.length;i++){var d=mel[i][1]*B;if(mel[i][0]){var nd=_n(master,mel[i][0],tt,d*0.88,'square',0.28,1600);if(nd)nodes.push(nd);}tt+=d;}
+    tt=t;
+    for(var i=0;i<harm.length;i++){var d=harm[i][1]*B;if(harm[i][0]){var nd=_n(master,harm[i][0],tt,d*0.82,'square',0.16,1200);if(nd)nodes.push(nd);}tt+=d;}
+    // Bass punches
+    var bassBeats=[0,7,13.5];
+    for(var i=0;i<bassBeats.length;i++){var nd=_n(master,C4,t+bassBeats[i]*B,1.5*B,'sine',0.30,600);if(nd)nodes.push(nd);}
+    nodes.push(_kick(master,t,0.70));nodes.push(_kick(master,t+7*B,0.60));
+    nodes.push(_snare(master,t+3*B));nodes.push(_snare(master,t+10*B));
+    // Auto-stop — fanfare plays once only
+    var totalLen=mel.reduce(function(s,x){return s+x[1]*B;},0);
+    _timers['fanfare']=setTimeout(function(){_stopTrack('fanfare');},totalLen*1000+300);
+    return nodes;
+  }
+
+  // 3. GRANDMA — soft triangle waltz 3/4
+  function _buildGrandma(master){
+    var B=0.42,nodes=[];
+    var C3=130.81,F3=174.61,G3=196,A3=220,C4=261.63,D4=293.66,E4=329.63,F4=349.23,G4=392,A4=440,B4=493.88,C5=523.25;
+    _makeRefillTrack('grandma',master,nodes,[
+      {beat:B,type:'triangle',vol:0.38,gate:0.88,notes:[[E4,2],[G4,1],[A4,2],[G4,1],[E4,2],[D4,1],[C4,3],[D4,2],[F4,1],[G4,2],[F4,1],[E4,2],[D4,1],[C4,3],[G4,2],[A4,1],[B4,2],[A4,1],[G4,2],[F4,1],[E4,3],[C5,2],[B4,1],[A4,2],[G4,1],[F4,2],[E4,1],[D4,3],[E4,2],[G4,1],[C5,2],[B4,1],[A4,2],[G4,1],[E4,3]]},
+      {beat:B,type:'triangle',vol:0.13,gate:0.82,notes:[[C4,3],[F4,3],[C4,3],[G4,3],[A4/2,3],[F4/2,3],[G4/2,3],[C4,3]]},
+      {beat:B,type:'sine',vol:0.15,cut:600,gate:0.95,notes:[[C3/2,6],[F3/2,6],[C3/2,6],[G3/2,6],[A3/2,6],[F3/2,6],[G3/2,6],[C3/2,6]]}
+    ],null);
+    return nodes;
+  }
+
+  // 4. COFFEE / NO TITLE — Late Night Study, 85bpm boom-bap, Dm
+  function _buildCoffee(master){
+    var B=60/85,nodes=[];
+    var D3=146.83,A3=220,F3=174.61,C3=130.81,G3=196,E3=164.81,D4=293.66,E4=329.63,F4=349.23,G4=392,A4=440,Bb4=466.16,C5=523.25;
+    var HAT=[1,0,1,0,1,1,0,1];
+    function drumFn(fromT,cycLen,nodes,master){
+      var t=fromT,end=fromT+cycLen,barLen=B*4;
+      while(t<end){
+        nodes.push(_kick(master,t,0.78));nodes.push(_kick(master,t+B*2.5,0.46));
+        nodes.push(_snare(master,t+B));nodes.push(_snare(master,t+B*3));
+        for(var h=0;h<8;h++)if(HAT[h])nodes.push(_hat(master,t+h*(B*0.5),0.09,0.026));
+        t+=barLen;
+      }
+    }
+    _makeRefillTrack('coffee',master,nodes,[
+      {beat:B,type:'square',vol:0.22,cut:750,gate:0.75,notes:[[A4,0.5],[0,0.5],[G4,0.5],[F4,0.5],[E4,1],[0,1],[D4,1],[E4,1],[F4,0.5],[0,0.5],[G4,0.5],[A4,0.5],[Bb4,1],[A4,1],[G4,2],[A4,0.5],[0,0.5],[C5,0.5],[Bb4,0.5],[A4,1],[G4,1],[F4,1],[E4,1],[D4,2],[F4,1],[A4,1],[G4,2],[0,2]]},
+      {beat:B,type:'sine',vol:0.24,cut:480,gate:0.88,notes:[[D3,2],[A3,2],[F3,2],[C3,2],[G3,2],[D3,2],[E3,2],[A3,2]]}
+    ],drumFn);
+    return nodes;
+  }
+
+  // 5. JOE — gentle interior, triangle/sine, lowpass pad
+  function _buildJoe(master){
+    var B=0.38,nodes=[];
+    var C3=130.81,E3=164.81,F3=174.61,G3=196,A3=220,C4=261.63,D4=293.66,E4=329.63,F4=349.23,G4=392,A4=440,C5=523.25;
+    _makeRefillTrack('joe',master,nodes,[
+      {beat:B,type:'triangle',vol:0.30,gate:0.88,notes:[[E4,2],[D4,1],[C4,1],[E4,2],[G4,2],[A4,2],[G4,1],[F4,1],[E4,4],[D4,2],[E4,1],[F4,1],[E4,2],[D4,2],[C4,6],[0,2]]},
+      {beat:B,type:'sine',vol:0.18,gate:0.90,notes:[[G3,4],[A3,4],[F3,4],[E3,4],[G3,4],[F3,4],[C3,8]]},
+      {beat:B,type:'sine',vol:0.18,cut:600,gate:0.95,notes:[[C3,8],[F3,8],[G3,8],[C3,8]]}
+    ],null);
+    return nodes;
+  }
+
+  // ── engine ───────────────────────────────────────────────────────────────
+  var BUILDERS={map:_buildMap,battle:_buildBattle,battle_naked:_buildBattleNaked,fanfare:_buildFanfare,grandma:_buildGrandma,coffee:_buildCoffee,joe:_buildJoe};
+  var BASE_VOL={map:0.45,battle:0.55,battle_naked:0.55,fanfare:0.60,grandma:0.55,coffee:0.55,joe:0.55};
+
+  function _stopTrack(id){
+    if(_timers[id]){clearInterval(_timers[id]);_timers[id]=null;}
+    _nextTime[id]=null;
+    if(_gains[id]){
+      // ramp to silence over 20ms before hard-stopping — eliminates click
+      var g=_gains[id],now=AC?AC.currentTime:0;
+      try{g.gain.setValueAtTime(g.gain.value,now);g.gain.linearRampToValueAtTime(0.0001,now+0.02);}catch(e){}
+      setTimeout(function(){
+        if(_playing[id]){_playing[id].forEach(function(n){try{n.stop();}catch(e){}});_playing[id]=null;}
+        try{g.disconnect();}catch(e){}
+      },30);
+      _gains[id]=null;
+    } else {
+      if(_playing[id]){_playing[id].forEach(function(n){try{n.stop();}catch(e){}});_playing[id]=null;}
+    }
+  }
+  function _stopAll(){Object.keys(_playing).forEach(_stopTrack);activeId=null;}
+
+  function _playTrack(id,vol){
+    if(!BUILDERS[id])return;
+    _stopAll();
+    getAC();
+    var master=AC.createGain();
+    master.gain.value=(vol!=null?vol:BASE_VOL[id]||0.5)*0.4;
+    master.connect(AC.destination);
+    _gains[id]=master;
+    _playing[id]=BUILDERS[id](master)||[];
     activeId=id;
-    startFadeLoop();
   }
 
-  function stopAll(fadeMs){
-    fadeMs=fadeMs==null?400:fadeMs;
-    if(!activeId)return;
-    var prev=pool.get(activeId);
-    activeId=null;fadeIn=null;
-    if(prev&&!prev.paused){
-      fadeOut={audio:prev,fromVol:prev.volume,toVol:0,t0:performance.now(),dur:fadeMs};
-      startFadeLoop();
+  // Smooth crossfade: fade out current, pause (1s for peaceful, instant for battle), fade in new
+  function _transitionTo(id,fadeMs){
+    if(fadeMs==null)fadeMs=SND_FADE_MS;
+    if(activeId===id)return;
+    if(!BUILDERS[id])return;
+    getAC();
+    var now=AC.currentTime,fadeSec=fadeMs/1000;
+    var oldId=activeId;
+    // Battle hits instantly — no silence gap, short fade
+    var isBattle=(id==='battle');
+    var outMs=isBattle?300:fadeMs;
+    var silenceGap=isBattle?0:1000;
+    var inFadeSec=isBattle?0.15:fadeSec;
+
+    // 1. Fade out current track
+    if(oldId&&_gains[oldId]){
+      var oldGain=_gains[oldId];
+      oldGain.gain.setValueAtTime(oldGain.gain.value,now);
+      oldGain.gain.linearRampToValueAtTime(0.0001,now+outMs/1000);
+      setTimeout(function(){_stopTrack(oldId);},outMs+40);
     }
+
+    activeId=id;
+
+    // 2. After fade-out + silence gap, build and fade in new track
+    var startDelay=outMs+silenceGap;
+    setTimeout(function(){
+      if(activeId!==id)return;
+      getAC();
+      var master=AC.createGain();
+      master.gain.value=0.0001;
+      master.connect(AC.destination);
+      _gains[id]=master;
+      _playing[id]=BUILDERS[id](master)||[];
+      var tNow=AC.currentTime;
+      master.gain.setValueAtTime(0.0001,tNow);
+      master.gain.linearRampToValueAtTime((BASE_VOL[id]||0.5)*0.4,tNow+inFadeSec);
+    },startDelay);
   }
 
+  // ── scene → track mapping ────────────────────────────────────────────────
   function desiredTrackForState(G){
     var m=G.mode,loc=G.indLoc||'';
-    if(m==='TITLE'||m==='INTRO')return null;
+    // joe is first and last — title, intro, airport, takeoff, credits
+    if(m==='TITLE'||m==='INTRO')return'joe';
+    if(m==='AIRPORT'||m==='TAKEOFF'||m==='KOBE_PILOT'||m==='CREDITS')return'joe';
     if(m==='EXPLORE'||m==='NPC_TALK')return'map';
-    if(m==='BATTLE')return'battle';
+    if(m==='BATTLE')return(G.curEnc===2)?'battle_naked':'battle';
     if(m==='CAVE'||m==='BOARDING')return'map';
     if(m==='FAREWELL')return'grandma';
     if(m==='CAB_FAREWELL')return'map';
-    if(m==='AIRPORT')return'map';
-    if(m==='TAKEOFF'||m==='KOBE_PILOT'||m==='CREDITS')return null;
     if(m==='INDOOR'||m==='INDOOR_TALK'){
       if(loc==='cafe')return'coffee';
       if(loc==='house')return'grandma';
@@ -176,61 +383,46 @@ canvas { width:100%; height:100%; display:block; image-rendering:pixelated; imag
     return'map';
   }
 
-  function musicStateKey(G,want){
-    return G.mode+'|'+(G.indLoc||'')+'|'+(want==null?'_':want);
-  }
-
   function syncMusicImpl(G,fadeMs){
+    if(_fanfarePlaying)return; // fanfare plays uninterrupted
     fadeMs=fadeMs==null?SND_FADE_MS:fadeMs;
     var want=desiredTrackForState(G);
-    var key=musicStateKey(G,want);
-    if(key===lastApplied&&!window.__tinyponiiNeedGestureResume)return;
+    var key=want==null?'__silent__':want;
+    // Always re-trigger battle tracks — must fire fresh every encounter
+    if(key==='battle'||key==='battle_naked') lastApplied='';
+    if(key===lastApplied)return;
     lastApplied=key;
-    if(want==null){
-      stopAll(fadeMs);
-      window.__tinyponiiNeedGestureResume=false;
-      return;
-    }
-    transitionTo(want,fadeMs);
+    if(want==null)_stopAll();
+    else _transitionTo(want,fadeMs);
   }
 
-  function unlockAudio(){
-    if(unlockAudio._done)return;
-    unlockAudio._done=true;
-    try{
-      var AC=window.AudioContext||window.webkitAudioContext;
-      if(AC){var ctx=new AC();if(ctx.state==='suspended')ctx.resume();ctx.close&&ctx.close();}
-    }catch(e){}
+  var _fanfarePlaying=false;
+
+  function _playFanfare(){
+    _stopAll();
+    getAC();
+    _fanfarePlaying=true;
+    var master=AC.createGain();
+    master.gain.value=(BASE_VOL['fanfare']||0.6)*0.4;
+    master.connect(AC.destination);
+    _gains['fanfare']=master;
+    _playing['fanfare']=_buildFanfare(master)||[];
+    activeId='fanfare';
+    var B=0.12;
+    var fanfareLen=(0.5+0.5+0.5+3+1.5+0.5+4+0.5+0.5+0.5+3+1.5+0.5+4+0.5+0.5+2+0.5+0.5+0.5+0.5+0.5+0.5+0.5+0.5+6)*B;
+    _timers['fanfare_flag']=setTimeout(function(){_fanfarePlaying=false;lastApplied='';},fanfareLen*1000+400);
   }
 
-  /** Call from a user-gesture handler so HTMLAudioElement.play() is allowed */
-  function primeMusicFromGesture(){
-    unlockAudio();
-    if(typeof G==='undefined'||!window.__tinyponiiSyncMusic)return;
-    var want=desiredTrackForState(G);
-    var blocked=!!window.__tinyponiiNeedGestureResume;
-    var aud=activeId?pool.get(activeId):null;
-    var stalled=want!=null&&aud!=null&&aud.paused;
-    if(blocked||stalled){
-      lastApplied='';
-      window.__tinyponiiSyncMusic(G, 0);
-    }
-  }
-
-  window.soundtrack=Object.assign(window.soundtrack,{
-    TRACK_SRC:TRACK_FILES,
-    playTrack:function(id){transitionTo(id,0);},
-    stopTrack:function(id){var x=pool.get(id);if(!x)return;if(activeId===id)activeId=null;x.pause();x.currentTime=0;},
-    stopAll:stopAll,
-    setVolume:function(id,v){baseVolume.set(id,clamp01(v));if(activeId===id){var z=pool.get(id);if(z)z.volume=clamp01(v);}},
-    transitionTo:transitionTo,
+  window.soundtrack={
+    playTrack:function(id){_playTrack(id);},
+    playFanfare:_playFanfare,
+    stopTrack:_stopTrack,
+    stopAll:_stopAll,
+    setVolume:function(id,v){if(_gains[id])_gains[id].gain.setTargetAtTime(v*0.4,AC.currentTime,0.02);},
+    transitionTo:_transitionTo,
     syncMusic:syncMusicImpl,
-    desiredTrackForState:desiredTrackForState,
-    unlock:unlockAudio,
-    primeMusicFromGesture:primeMusicFromGesture,
-    resetMusicState:function(){lastApplied='';}
-  });
-
+    desiredTrackForState:desiredTrackForState
+  };
   window.__tinyponiiSyncMusic=syncMusicImpl;
 })();
 function syncMusic(G,f){if(window.__tinyponiiSyncMusic)return window.__tinyponiiSyncMusic(G,f);}
@@ -731,27 +923,28 @@ const ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
 
 /** Standalone dialogue portraits (96×96 framed area in dialog box). */
-const DIALOG_GRANDMA_PORTRAIT=new Image();
-DIALOG_GRANDMA_PORTRAIT.src='assets/grandmapreview.png';
-const DIALOG_GARY_PORTRAIT=new Image();
-DIALOG_GARY_PORTRAIT.src='assets/gary.png';
-const DIALOG_MAY_PORTRAIT=new Image();
-DIALOG_MAY_PORTRAIT.src='assets/may.png';
-const DIALOG_WING_PORTRAIT=new Image();
-DIALOG_WING_PORTRAIT.src='assets/wing.png';
-const DIALOG_SADONNA_PORTRAIT=new Image();
-DIALOG_SADONNA_PORTRAIT.src='assets/sadonna.png';
-const DIALOG_KOBE_PORTRAIT=new Image();
-DIALOG_KOBE_PORTRAIT.src='assets/kobe.png';
-const DIALOG_DAD_PORTRAIT=new Image();
-DIALOG_DAD_PORTRAIT.src='assets/dad.png';
-const DIALOG_JO_PORTRAIT=new Image();
-DIALOG_JO_PORTRAIT.src='assets/jo.png';
-const DIALOG_DODO_PORTRAIT=new Image();
-DIALOG_DODO_PORTRAIT.src='assets/dodo.png';
+// Portrait loader — tries local path first, falls back to GitHub repo
+const PORTRAIT_REPO_BASE='https://raw.githubusercontent.com/robbiekruszynski/tinyponii/master/assets/';
+function _loadPortrait(localSrc, repoFile){
+  const i=new Image();
+  i.crossOrigin='anonymous';
+  i.onerror=function(){
+    // local path failed — try repo URL
+    if(!i._triedRepo){ i._triedRepo=true; i.src=PORTRAIT_REPO_BASE+repoFile; }
+  };
+  i.src=localSrc;
+  return i;
+}
+const DIALOG_GRANDMA_PORTRAIT=_loadPortrait('assets/grandmapreview.png','grandmapreview.png');
+const DIALOG_GARY_PORTRAIT   =_loadPortrait('assets/gary.png',   'gary.png');
+const DIALOG_MAY_PORTRAIT    =_loadPortrait('assets/may.png',    'may.png');
+const DIALOG_WING_PORTRAIT   =_loadPortrait('assets/wing.png',   'wing.png');
+const DIALOG_SADONNA_PORTRAIT=_loadPortrait('assets/sadonna.png','sadonna.png');
+const DIALOG_KOBE_PORTRAIT   =_loadPortrait('assets/kobe.png',   'kobe.png');
+const DIALOG_DAD_PORTRAIT    =_loadPortrait('assets/dad.png',    'dad.png');
+const DIALOG_JO_PORTRAIT     =_loadPortrait('assets/jo.png',     'jo.png');
 /** Jo's dog — dialog portrait + world sprite */
-const CHARLIE_IMG=new Image();
-CHARLIE_IMG.src='assets/charlie.png';
+const CHARLIE_IMG=_loadPortrait('assets/charlie.png','charlie.png');
 /** Optional night HK cityscape for cockpit windscreen — procedural fallback if missing or unloaded */
 const COCKPIT_HK_BG=new Image();
 COCKPIT_HK_BG.src='assets/hk_cityscape_night.png';
@@ -3957,16 +4150,68 @@ function wrapDialogCanvasLines(ctx,text,maxWidth){
   return lines.length?lines:[''];
 }
 
-/** Portrait inside dialog frame — aspect-preserving (no stretch), letterboxed */
-function drawDialogPortraitFit(img, px, py, pw, ph){
-  if(!img.complete||img.naturalWidth<=0)return;
-  const nw=img.naturalWidth, nh=img.naturalHeight;
-  const sc=Math.min(pw/nw, ph/nh);
-  const dw=Math.round(nw*sc), dh=Math.round(nh*sc);
-  const ox=px+Math.round((pw-dw)/2), oy=py+Math.round((ph-dh)/2);
+/** PNG asset map — matches filenames in assets/ folder */
+const PORTRAIT_IMGS={
+  grandma: DIALOG_GRANDMA_PORTRAIT,
+  gary:    DIALOG_GARY_PORTRAIT,
+  may:     DIALOG_MAY_PORTRAIT,
+  wing:    DIALOG_WING_PORTRAIT,
+  sadonna: DIALOG_SADONNA_PORTRAIT,
+  kobe:    DIALOG_KOBE_PORTRAIT,
+  dad:     DIALOG_DAD_PORTRAIT,
+  jo:      DIALOG_JO_PORTRAIT,
+  charlie: CHARLIE_IMG,
+};
+
+/** Draw portrait: PNG asset if loaded, procedural sprite fallback */
+function drawDialogPortrait(nl, px, py, pw, ph){
   ctx.fillStyle='#161624';
   ctx.fillRect(px,py,pw,ph);
-  ctx.drawImage(img,0,0,nw,nh,ox,oy,dw,dh);
+
+  // Try PNG first
+  const img=PORTRAIT_IMGS[nl];
+  if(img && img.complete && img.naturalWidth>0){
+    const nw=img.naturalWidth, nh=img.naturalHeight;
+    const sc=Math.min(pw/nw, ph/nh);
+    const dw=Math.round(nw*sc), dh=Math.round(nh*sc);
+    const ox=px+Math.round((pw-dw)/2), oy=py+Math.round((ph-dh)/2);
+    ctx.drawImage(img,0,0,nw,nh,ox,oy,dw,dh);
+    return;
+  }
+
+  // Procedural fallback — scaled sprite
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(px,py,pw,ph);
+  ctx.clip();
+  var sc=3.2;
+  var cx=px+pw/2, cy=py+ph*0.82;
+  ctx.translate(cx,cy);
+  ctx.scale(sc,sc);
+  ctx.translate(-12,-28);
+  var t=G?G.tick:0;
+  if(nl==='may')                      drawMay(0,0,t,'down');
+  else if(nl==='kobe')                drawKobe(0,0,t,'right');
+  else if(nl==='grandma')             drawGrandma(0,0);
+  else if(nl==='gary')                drawGary(0,0);
+  else if(nl==='dad')                 drawFather(0,0);
+  else if(nl==='jo')                  drawJo(0,0);
+  else if(nl==='charlie')             drawCharlie(0,0,t,'right');
+  else if(nl==='wing')                drawWing(0,0,t);
+  else if(nl==='sadonna')             drawSadonna(0,0);
+  else if(nl==='gate agent'||nl==='agent') drawGateAgent(0,0);
+  else {
+    ctx.restore();
+    ctx.save();
+    ctx.beginPath();ctx.rect(px,py,pw,ph);ctx.clip();
+    ctx.fillStyle='#2a2a40';ctx.fillRect(px,py,pw,ph);
+    ctx.fillStyle='#484870';
+    ctx.fillRect(px+pw/2-10,py+ph*0.25,20,20);
+    ctx.fillRect(px+pw/2-14,py+ph*0.52,28,26);
+    ctx.restore();
+    return;
+  }
+  ctx.restore();
 }
 
 function drawDialog(lines,speaker='',opts){
@@ -3978,22 +4223,14 @@ function drawDialog(lines,speaker='',opts){
   let by=narrowBattle?(H-14-bh):(H-128);
   const norm=normalizeDialogSpeaker(speaker);
   const nl=norm.toLowerCase();
-  let portraitImg=null;
-  if(nl==='grandma') portraitImg=DIALOG_GRANDMA_PORTRAIT;
-  else if(nl==='gary') portraitImg=DIALOG_GARY_PORTRAIT;
-  else if(nl==='may') portraitImg=DIALOG_MAY_PORTRAIT;
-  else if(nl==='wing') portraitImg=DIALOG_WING_PORTRAIT;
-  else if(nl==='sadonna') portraitImg=DIALOG_SADONNA_PORTRAIT;
-  else if(nl==='kobe') portraitImg=DIALOG_KOBE_PORTRAIT;
-  else if(nl==='dad') portraitImg=DIALOG_DAD_PORTRAIT;
-  else if(nl==='jo') portraitImg=DIALOG_JO_PORTRAIT;
-  else if(nl==='charlie') portraitImg=CHARLIE_IMG;
-  else if(nl==='dodo') portraitImg=DIALOG_DODO_PORTRAIT;
-  const PW=96, PH=96;
+  const NAMED_SPEAKERS=new Set(['may','kobe','grandma','gary','dad','jo','charlie','wing','sadonna','gate agent','agent']);
+  // Show portrait for any known speaker
+  const hasPortrait = NAMED_SPEAKERS.has(nl) || nl.length>0;
+  const PW=80, PH=112;  // portrait-aspect to match the PNG files
 
   let textLeft=bx+16;
-  if(portraitImg)
-    textLeft=Math.min(bx+12+PW+18, bx+bw-52);
+  if(hasPortrait)
+    textLeft=Math.min(bx+12+PW+14, bx+bw-52);
 
   let wrappedBody=[];
   let lineGap=narrowBattle?17:21;
@@ -4029,14 +4266,9 @@ function drawDialog(lines,speaker='',opts){
   ctx.strokeStyle=C.uiB2;ctx.lineWidth=2;ctx.strokeRect(bx+5,by+5,bw-10,bh-10);
   ctx.strokeStyle=C.uiB;ctx.lineWidth=1;ctx.strokeRect(bx+7,by+7,bw-14,bh-14);
 
-  if(portraitImg){
+  if(hasPortrait){
     const px=bx+12, py=by+bh-PH-12;
-    const img=portraitImg;
-    if(img.complete && img.naturalWidth>0){
-      drawDialogPortraitFit(img, px, py, PW, PH);
-    } else {
-      r(px,py,PW,PH,'#161624');
-    }
+    drawDialogPortrait(nl, px, py, PW, PH);
     ctx.strokeStyle=C.uiB2;ctx.lineWidth=2;ctx.strokeRect(px+1,py+1,PW-2,PH-2);
     ctx.strokeStyle=C.uiB;ctx.lineWidth=1;ctx.strokeRect(px+3,py+3,PW-6,PH-6);
   }
@@ -5433,6 +5665,7 @@ function getInput(){
 let lastT=0;
 function loop(ts){
   const dt=Math.min((ts-lastT)/1000,0.05);lastT=ts;G.tick++;
+  syncMusic(G);
   ctx.clearRect(0,0,W,H);
   const {dx,dy}=getInput();
 
@@ -5592,7 +5825,11 @@ function loop(ts){
       drawBattle();
       if(G.battleTimer>0.4){
         G.kobePhase=0;G.battleTimer=0;
-        if((G.kobeAttacks||0)>=BATTLE_ROUNDS) G.battlePhase='result';
+        if((G.kobeAttacks||0)>=BATTLE_ROUNDS){
+          G.battlePhase='result';
+          // Fire victory fanfare — stops battle music, plays fanfare once
+          if(window.soundtrack){window.soundtrack.playFanfare();}
+        }
         else G.battlePhase='enemyattack';
       }
     } else if(G.battlePhase==='result'){
@@ -6006,22 +6243,30 @@ function loop(ts){
     }
   }
 
-  syncMusic(G);
   G.aBtn=false;
   requestAnimationFrame(loop);
 }
 
-(function(){
-  document.addEventListener('keydown',function(e){
-    if(e.repeat)return;
-    if(window.soundtrack&&window.soundtrack.primeMusicFromGesture)window.soundtrack.primeMusicFromGesture();
-  },{capture:true});
-  document.addEventListener('pointerdown',function(){
-    if(window.soundtrack&&window.soundtrack.primeMusicFromGesture)window.soundtrack.primeMusicFromGesture();
-  },{capture:true});
-})();
+// When any portrait image loads late, it's already in the Image object —
+// canvas drawImage will use it on the next frame automatically. No extra work needed.
 
-requestAnimationFrame(ts=>{lastT=ts;requestAnimationFrame(loop);});
+// Preload all portrait PNGs before starting the loop
+(function preloadPortraits(){
+  var imgs=[
+    DIALOG_MAY_PORTRAIT,DIALOG_KOBE_PORTRAIT,DIALOG_GRANDMA_PORTRAIT,
+    DIALOG_GARY_PORTRAIT,DIALOG_SADONNA_PORTRAIT,DIALOG_WING_PORTRAIT,
+    DIALOG_DAD_PORTRAIT,DIALOG_JO_PORTRAIT,CHARLIE_IMG
+  ];
+  var loaded=0,started=false;
+  function start(){if(started)return;started=true;requestAnimationFrame(function(ts){lastT=ts;requestAnimationFrame(loop);});}
+  imgs.forEach(function(img){
+    if(img.complete&&img.naturalWidth>0){loaded++;if(loaded>=imgs.length)start();}
+    else{img.addEventListener('load',function(){loaded++;if(loaded>=imgs.length)start();});
+         img.addEventListener('error',function(){loaded++;if(loaded>=imgs.length)start();});}
+  });
+  setTimeout(start,3000); // safety fallback if any images fail
+  if(imgs.every(function(i){return i.complete;}))start();
+})();
 </script>
 </body>
 </html>
