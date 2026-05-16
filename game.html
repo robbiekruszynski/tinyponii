@@ -2,23 +2,274 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>May &amp; Kobe — Hong Kong</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-body { background:#0a0a14; display:flex; align-items:center; justify-content:center; min-height:100vh; overflow:hidden; }
-#wrap { position:relative; width:640px; height:480px; max-width:100vw; }
-canvas { width:100%; height:100%; display:block; image-rendering:pixelated; image-rendering:crisp-edges; }
+body {
+  background:#0a0a14;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:100vh;
+  min-height:100dvh;
+  overflow:hidden;
+  touch-action: manipulation;
+  --touchReserve: 28px;
+}
+/* Portrait: HUD overlays bottom — minimal reserve. Landscape: slim side rail + full canvas height. */
+body.mobile-ui {
+  --hudSide: 0px;
+  --touchReserve: max(10px, env(safe-area-inset-bottom));
+}
+@media (orientation: landscape) {
+  body.mobile-ui {
+    /* ~3×dpad cell + gaps + padding; keeps rail narrow without overlapping the canvas */
+    --hudSide: clamp(108px, 21vmin, 130px);
+    --touchReserve: max(8px, env(safe-area-inset-top), env(safe-area-inset-bottom));
+  }
+}
+#stage {
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  min-height:100vh;
+  min-height:100dvh;
+  min-height:100svh;
+  padding:
+    max(4px, env(safe-area-inset-top))
+    max(6px, env(safe-area-inset-right))
+    max(4px, env(safe-area-inset-bottom))
+    max(6px, env(safe-area-inset-left));
+  gap:6px;
+}
+@media (orientation: landscape) {
+  body.mobile-ui #stage {
+    flex-direction:row;
+    flex-wrap:nowrap;
+    justify-content:center;
+    align-items:center;
+    gap:clamp(4px, 1.2vmin, 10px);
+    padding-top:max(2px, env(safe-area-inset-top));
+    padding-bottom:max(2px, env(safe-area-inset-bottom));
+  }
+}
+#wrap {
+  position:relative;
+  width:min(
+    calc(100vw - 20px - var(--hudSide, 0px)),
+    calc((100dvh - var(--touchReserve)) * 4 / 3),
+    calc((100svh - var(--touchReserve)) * 4 / 3)
+  );
+  max-height:min(
+    calc(100dvh - var(--touchReserve)),
+    calc(100svh - var(--touchReserve))
+  );
+  aspect-ratio:4 / 3;
+  flex-shrink:0;
+}
+.landscape-hint {
+  display:none;
+  position:absolute;
+  top:max(2px, env(safe-area-inset-top));
+  left:50%;
+  transform:translateX(-50%);
+  z-index:2;
+  pointer-events:none;
+  font:600 10px/1.2 system-ui,sans-serif;
+  letter-spacing:0.03em;
+  text-transform:uppercase;
+  color:rgba(180,168,148,0.5);
+  white-space:nowrap;
+  max-width:calc(100% - 24px);
+  text-align:center;
+}
+body.mobile-ui .landscape-hint { display:block; }
+@media (orientation: landscape) {
+  body.mobile-ui .landscape-hint { display:none; }
+}
+canvas {
+  width:100%;
+  height:100%;
+  display:block;
+  touch-action:none;
+  image-rendering:pixelated;
+  image-rendering:crisp-edges;
+}
 #flash { position:absolute; inset:0; background:white; opacity:0; pointer-events:none; }
 #flash.on { animation:fa 0.45s ease-out forwards; }
 @keyframes fa { 0%{opacity:1} 100%{opacity:0} }
-/* mobile controls removed — keyboard only */
+
+/* ── Touch HUD (coarse pointers / narrow screens) ─────────────────────── */
+#touchHud {
+  display:none;
+  width:100%;
+  max-width:300px;
+  flex-shrink:0;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:10px;
+  padding:0;
+  user-select:none;
+  -webkit-user-select:none;
+}
+body.mobile-ui #touchHud { display:flex; }
+@media (orientation: portrait) {
+  body.mobile-ui #touchHud {
+    position:absolute;
+    left:50%;
+    transform:translateX(-50%);
+    bottom:max(4px, env(safe-area-inset-bottom));
+    z-index:8;
+    width:calc(100% - 16px);
+    max-width:min(300px, calc(100vw - 16px));
+    box-sizing:border-box;
+    align-items:center;
+    padding:6px 10px 7px;
+    gap:12px;
+    background:rgba(12,12,22,0.52);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,0.1);
+    box-shadow:0 -2px 24px rgba(0,0,0,0.35);
+  }
+}
+@media (orientation: landscape) {
+  body.mobile-ui #touchHud {
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    width:auto;
+    max-width:none;
+    flex:0 0 auto;
+    padding:0 2px;
+    gap:clamp(6px, 1.8vmin, 12px);
+    background:transparent;
+    backdrop-filter:none;
+    -webkit-backdrop-filter:none;
+    border:none;
+    box-shadow:none;
+  }
+}
+.touch-dpad {
+  display:grid;
+  grid-template-columns:repeat(3, clamp(26px, 7.5vw, 38px));
+  grid-template-rows:repeat(3, clamp(26px, 7.5vw, 38px));
+  gap:3px;
+  filter:drop-shadow(0 3px 10px rgba(0,0,0,0.4));
+}
+@media (orientation: landscape) {
+  body.mobile-ui .touch-dpad {
+    grid-template-columns:repeat(3, clamp(24px, 5.8vmin, 36px));
+    grid-template-rows:repeat(3, clamp(24px, 5.8vmin, 36px));
+    gap:3px;
+  }
+}
+.touch-zone {
+  border:none;
+  border-radius:10px;
+  font-size:clamp(11px, 3.2vw, 14px);
+  line-height:1;
+  color:rgba(248,232,216,0.92);
+  background:linear-gradient(165deg, rgba(255,255,255,0.14), rgba(255,255,255,0.05));
+  border:1px solid rgba(255,255,255,0.18);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+  cursor:pointer;
+  touch-action:none;
+}
+.touch-zone:active,
+.touch-zone.touch-zone-active {
+  background:linear-gradient(165deg, rgba(168,232,112,0.35), rgba(255,255,255,0.08));
+  border-color:rgba(168,232,112,0.45);
+  color:#fff;
+}
+.touch-zone.touch-up { grid-column:2; grid-row:1; border-radius:10px 10px 7px 7px; }
+.touch-zone.touch-left { grid-column:1; grid-row:2; border-radius:10px 7px 7px 10px; }
+.touch-zone.touch-spacer {
+  grid-column:2;
+  grid-row:2;
+  pointer-events:none;
+  visibility:hidden;
+  border:none;
+  background:transparent;
+}
+.touch-zone.touch-right { grid-column:3; grid-row:2; border-radius:7px 10px 10px 7px; }
+.touch-zone.touch-down { grid-column:2; grid-row:3; border-radius:7px 7px 10px 10px; }
+
+.touch-act-wrap {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:2px;
+  filter:drop-shadow(0 3px 10px rgba(0,0,0,0.4));
+}
+.touch-act {
+  border:none;
+  width:clamp(38px, 10vw, 52px);
+  height:clamp(38px, 10vw, 52px);
+  border-radius:50%;
+  font-family:ui-rounded,'Segoe UI',system-ui,sans-serif;
+  font-weight:700;
+  font-size:clamp(13px, 3.8vw, 17px);
+  letter-spacing:0.02em;
+  color:rgba(248,232,216,0.95);
+  background:radial-gradient(circle at 30% 28%, rgba(255,255,255,0.26), rgba(120,140,255,0.22) 42%, rgba(40,44,90,0.55));
+  border:2px solid rgba(255,255,255,0.28);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+  cursor:pointer;
+  touch-action:none;
+}
+.touch-act:active,
+.touch-act.touch-act-active {
+  transform:scale(0.96);
+  border-color:rgba(168,232,112,0.55);
+  background:radial-gradient(circle at 30% 28%, rgba(168,232,112,0.45), rgba(120,140,255,0.28) 48%, rgba(40,44,90,0.65));
+}
+.touch-act-label {
+  font:600 8px/1 ui-sans-serif,system-ui,sans-serif;
+  letter-spacing:0.12em;
+  text-transform:uppercase;
+  color:rgba(200,190,170,0.45);
+}
+body.mobile-ui .touch-act-label { display:none; }
+@media (orientation: landscape) {
+  body.mobile-ui .touch-act {
+    width:clamp(36px, 8.5vmin, 48px);
+    height:clamp(36px, 8.5vmin, 48px);
+    font-size:clamp(12px, 3.4vmin, 16px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .touch-act:active { transform:none; }
+}
 </style>
 </head>
 <body>
+<div id="stage">
+<p class="landscape-hint" aria-hidden="true">Landscape recommended — larger play area</p>
 <div id="wrap">
   <canvas id="c" width="640" height="480"></canvas>
   <div id="flash"></div>
+</div>
+<div id="touchHud" aria-hidden="true">
+  <div class="touch-dpad" id="touchDpad">
+    <button type="button" class="touch-zone touch-up" id="tzUp" aria-label="Up">▲</button>
+    <button type="button" class="touch-zone touch-left" id="tzLeft" aria-label="Left">◀</button>
+    <span class="touch-zone touch-spacer" aria-hidden="true"></span>
+    <button type="button" class="touch-zone touch-right" id="tzRight" aria-label="Right">▶</button>
+    <button type="button" class="touch-zone touch-down" id="tzDown" aria-label="Down">▼</button>
+  </div>
+  <div class="touch-act-wrap">
+    <button type="button" class="touch-act" id="touchAct" aria-label="Interact">A</button>
+    <span class="touch-act-label">Talk / Enter</span>
+  </div>
+</div>
 </div>
 <script>
 // ============================================================
@@ -213,8 +464,35 @@ canvas { width:100%; height:100%; display:block; image-rendering:pixelated; imag
     return nodes;
   }
 
-  // 2c. FANFARE — Classic FF victory, plays once then stops
+  // 2c. FANFARE — Blitz Sting: three punchy brass jabs then a massive chord crash
   function _buildFanfare(master){
+    var nodes=[];
+    var t=AC.currentTime+0.05;
+    // Three quick brass stabs
+    var stabs=[[523.25,0.00],[659.25,0.12],[783.99,0.24]];
+    for(var i=0;i<stabs.length;i++){
+      var nd=_n(master,stabs[i][0],t+stabs[i][1],0.10,'sawtooth',0.30,2000);
+      if(nd)nodes.push(nd);
+    }
+    // Crash chord: C5 E5 G5 C6 all hit at 0.38s
+    var crash=[[523.25,0.38,0.55],[659.25,0.38,0.52],[783.99,0.38,0.52],[1046.50,0.38,0.55]];
+    for(var i=0;i<crash.length;i++){
+      var nd=_n(master,crash[i][0],t+crash[i][1],crash[i][2],'sawtooth',0.20,3000);
+      if(nd)nodes.push(nd);
+    }
+    // High accent spike on crash
+    var hi=_n(master,1567.98,t+0.38,0.55,'sawtooth',0.14,4000);
+    if(hi)nodes.push(hi);
+    // Bass kick and low note on crash
+    nodes.push(_kick(master,t+0.38,0.42));
+    var bass=_n(master,261.63,t+0.38,0.52,'sawtooth',0.22,600);
+    if(bass)nodes.push(bass);
+    // Auto-stop at ~1.1s
+    _timers['fanfare']=setTimeout(function(){_stopTrack('fanfare');},1100);
+    return nodes;
+  }
+  // DEAD CODE BELOW — replaced by Blitz Sting above, kept for reference only
+  function _buildFanfare_UNUSED(master){
     var B=0.12,nodes=[];
     var C4=261.63,Eb4=311.13,F4=349.23,G4=392,Ab4=415.3,Bb4=466.16,C5=523.25,Db5=554.37,Eb5=622.25,G5=783.99;
     // The classic: G G G Eb(long) Bb Eb G
@@ -384,11 +662,12 @@ canvas { width:100%; height:100%; display:block; image-rendering:pixelated; imag
   }
 
   function syncMusicImpl(G,fadeMs){
-    if(_fanfarePlaying)return; // fanfare plays uninterrupted
+    if(_fanfarePlaying)return; // fanfare plays uninterrupted — block ALL transitions
     fadeMs=fadeMs==null?SND_FADE_MS:fadeMs;
     var want=desiredTrackForState(G);
     var key=want==null?'__silent__':want;
     // Always re-trigger battle tracks — must fire fresh every encounter
+    // But NOT if fanfare just finished — give it a moment before battle restarts
     if(key==='battle'||key==='battle_naked') lastApplied='';
     if(key===lastApplied)return;
     lastApplied=key;
@@ -400,6 +679,7 @@ canvas { width:100%; height:100%; display:block; image-rendering:pixelated; imag
 
   function _playFanfare(){
     _stopAll();
+    lastApplied='fanfare'; // prevent syncMusic re-triggering battle on next frame
     getAC();
     _fanfarePlaying=true;
     var master=AC.createGain();
@@ -408,9 +688,8 @@ canvas { width:100%; height:100%; display:block; image-rendering:pixelated; imag
     _gains['fanfare']=master;
     _playing['fanfare']=_buildFanfare(master)||[];
     activeId='fanfare';
-    var B=0.12;
-    var fanfareLen=(0.5+0.5+0.5+3+1.5+0.5+4+0.5+0.5+0.5+3+1.5+0.5+4+0.5+0.5+2+0.5+0.5+0.5+0.5+0.5+0.5+0.5+0.5+6)*B;
-    _timers['fanfare_flag']=setTimeout(function(){_fanfarePlaying=false;lastApplied='';},fanfareLen*1000+400);
+    // Blitz Sting is ~1.1s — flag clears shortly after, then map music resumes naturally
+    _timers['fanfare_flag']=setTimeout(function(){_fanfarePlaying=false;lastApplied='';},1400);
   }
 
   window.soundtrack={
@@ -421,7 +700,8 @@ canvas { width:100%; height:100%; display:block; image-rendering:pixelated; imag
     setVolume:function(id,v){if(_gains[id])_gains[id].gain.setTargetAtTime(v*0.4,AC.currentTime,0.02);},
     transitionTo:_transitionTo,
     syncMusic:syncMusicImpl,
-    desiredTrackForState:desiredTrackForState
+    desiredTrackForState:desiredTrackForState,
+    resume:function(){try{getAC();}catch(_){}}
   };
   window.__tinyponiiSyncMusic=syncMusicImpl;
 })();
@@ -605,11 +885,11 @@ const CAVE_MAP = [
 // ============================================================
 const ENC_DATA = [
   { name:'Moving Details', sprite:'agent', lines:[
-    "Oh! You must be May. I have your\nmoving manifest right here...",
-    "Your 47 boxes will arrive in...\n6 to 8 weeks. Or maybe 12.",
-    "We recommend insuring everything.\nEspecially the irreplaceable stuff.",
-    "Forms signed? Great. Kobe can't\ncome in the truck though.",
-    "\u2605 May wins! Kobe rides with you.",
+    "May? I have your file here.\nBarcelona residency — NIE application.",
+    "Your NIE appointment is confirmed.\nBut the address on form EX-15...\ndoesn't match your rental contract.",
+    "Empadronament — the register date.\nYou need this before the NIE.\nYou need the NIE before... everything.",
+    "Hong Kong documents need an apostille.\nThen certified translation. Then...\nwe wait. Six to eight weeks. Minimum.\nMuahahahaha.",
+    "\u2605 May wins! Kobe sits very still.\nThe forms are filed. Probably correct.",
   ]},
   { name:'Moving Costs', sprite:'invoice', lines:[
     "DEPOSIT. FIRST MONTH. LAST MONTH.\nAGENT FEE.",
@@ -640,11 +920,11 @@ const ENC_DATA = [
     "\u2605 Kobe wins! The bus rolls on — ears ringing.",
   ]},
   { name:'AIRPODS', sprite:'airpods', kobeLead:true, lines:[
-    "They were on the bed — charging, innocent.\nNow they're on the rug, right of the couch — crumbs everywhere.",
-    "Kobe snuck them off the pillow while you labeled boxes.\nThen he had his way with them\nin a donut — box, crumbs, shame.",
-    "Icing in the mesh. Sprinkles in the case.\nThe warranty heard rumours and moved abroad.",
-    "He won't look at you.\nThe buds hover anyway — white plastic jury.",
-    "\u2605 Kobe wins! The Pros tap shut.\nYou're still buying new tips.",
+    "Kobe snuck them off the bed.\nYou don't know when. You don't know how.",
+    "They were in his donut bed.\nBoth of them. In the hole.\nSurrounded by crumbs.",
+    "He was asleep on top of them\nwhen you found him.\nOne ear still playing.",
+    "He doesn't feel bad about this.\nHe will never feel bad about this.",
+    "\u2605 Kobe wins! He always does.",
   ]},
 ];
 
@@ -723,8 +1003,7 @@ const FAREWELL_LINES = [
   { sp:'Grandma', tx:'Call when you land. We celebrate!' },
   { sp:'Dad',  tx:"We are SO proud of you, May!" },
   { sp:'Dad',  tx:"Go show them what you've got. 🎉" },
-  { sp:'DoDo',    tx:'...Socks in your carry-on.\nAnd my tissues — just in case.' },
-  { sp:'DoDo',    tx:'Brightest adventure. Eat everything worth eating.' },
+
   { sp:'',        tx:'(Her hand pauses. Then she turns\naround — she is smiling.)' },
   { sp:'May',     tx:"I'll call when I land. I love you all." },
   { sp:'Kobe',    tx:'WOOF WOOF!' },
@@ -732,14 +1011,12 @@ const FAREWELL_LINES = [
 
 // After boarding pass: talk to Grandma indoors — Dad & DoDo gather; completes → farewellDone
 const HOUSE_BOARDING_SENDOFF_LINES = [
-  { sp:'Grandma', tx:'Mei mei — show Grandma.\nThe real ticket?' },
+  { sp:'Grandma', tx:'May May — show Grandma.\nThe real ticket?' },
   { sp:'May',     tx:'Boarding pass. Right here in my bag.' },
   { sp:'Grandma', tx:'Ha! Then we do this properly.\nEveryone — come wish her luck!' },
   { sp:'Dad',  tx:'There she is. Barcelona-bound.' },
   { sp:'Dad',  tx:'We are so proud of you, May.\nGo show them what you\'ve got.' },
-  { sp:'DoDo',    tx:'...Socks in your carry-on.\nAnd tissues. Just in case.' },
-  { sp:'DoDo',    tx:'I will watch over Grandma and Dad — this whole household —\nwhile you are gone. You only worry about the plane.' },
-  { sp:'DoDo',    tx:'Wish you the brightest adventure in Barcelona.\nEat everything worth eating. Bring back stories.' },
+
   { sp:'Grandma', tx:'All our love goes with you.' },
   { sp:'May',     tx:'Thank you. For everything.' },
   { sp:'Kobe',    tx:'WOOF WOOF!' },
@@ -757,11 +1034,10 @@ const HOUSE_DAD_LINES = [
 const CAB_FAREWELL_LINES = [
   { sp:'Grandma', tx:'The cab\'s waited. One more hug counts double.' },
   { sp:'Dad',  tx:'Passport. Phone charger. Kobe.\nYou\'re covered.' },
-  { sp:'DoDo',    tx:'...There are buns in your bag.\nEat before you sleep.' },
-  { sp:'DoDo',    tx:'I will keep everyone watered and fussed-over till you text us from Spain.\nGo — Barcelona is yours.' },
+
   { sp:'Jo',      tx:'Okay — Charlie, last lap for real this time.\nMay — we\'ve got you. Always.' },
   { sp:'Charlie', tx:'Woof woof!' },
-  { sp:'Sadonna', tx:'Photos tonight or we send a search party.\nWe love you!' },
+  { sp:'Sardonna', tx:'Photos tonight or we send a search party.\nWe love you!' },
   { sp:'Wing',    tx:'Say hi to the sea for us.\nAnd Kobe — zoom zoom!' },
   { sp:'Gary',    tx:'Whenever you\'re ready.' },
   { sp:'May',     tx:'I love you all. Really.' },
@@ -928,18 +1204,19 @@ const PORTRAIT_REPO_BASE='https://raw.githubusercontent.com/robbiekruszynski/tin
 function _loadPortrait(localSrc, repoFile){
   const i=new Image();
   i.crossOrigin='anonymous';
+  // Try repo URL first (single HTML file has no local assets/ folder)
+  i.src=PORTRAIT_REPO_BASE+repoFile;
   i.onerror=function(){
-    // local path failed — try repo URL
-    if(!i._triedRepo){ i._triedRepo=true; i.src=PORTRAIT_REPO_BASE+repoFile; }
+    // Repo failed — try local path as last resort
+    if(!i._triedLocal){ i._triedLocal=true; i.src=localSrc; }
   };
-  i.src=localSrc;
   return i;
 }
 const DIALOG_GRANDMA_PORTRAIT=_loadPortrait('assets/grandmapreview.png','grandmapreview.png');
 const DIALOG_GARY_PORTRAIT   =_loadPortrait('assets/gary.png',   'gary.png');
 const DIALOG_MAY_PORTRAIT    =_loadPortrait('assets/may.png',    'may.png');
 const DIALOG_WING_PORTRAIT   =_loadPortrait('assets/wing.png',   'wing.png');
-const DIALOG_SADONNA_PORTRAIT=_loadPortrait('assets/sadonna.png','sadonna.png');
+const DIALOG_SARDONNA_PORTRAIT=_loadPortrait('assets/sadonna.png','sadonna.png');
 const DIALOG_KOBE_PORTRAIT   =_loadPortrait('assets/kobe.png',   'kobe.png');
 const DIALOG_DAD_PORTRAIT    =_loadPortrait('assets/dad.png',    'dad.png');
 const DIALOG_JO_PORTRAIT     =_loadPortrait('assets/jo.png',     'jo.png');
@@ -953,8 +1230,139 @@ window.addEventListener('keydown',e=>{
   G.keys[e.key]=true;
   if([' ','Enter','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))e.preventDefault();
   if(e.key===' '||e.key==='Enter') G.aBtn=true;
+  if(e.key==='ArrowUp'||e.key==='w') G.upBtn=true;
+  if(e.key==='ArrowDown'||e.key==='s') G.downBtn=true;
 });
 window.addEventListener('keyup',e=>{delete G.keys[e.key];});
+
+(function setupMobileTouchControls(){
+  const mqCoarse=window.matchMedia('(pointer: coarse)');
+  const mqNarrow=window.matchMedia('(max-width: 720px)');
+  const mqReduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
+  function mqListen(mq, fn){
+    if(typeof mq.addEventListener==='function') mq.addEventListener('change', fn);
+    else if(typeof mq.addListener==='function') mq.addListener(fn);
+  }
+  function mobileUiActive(){
+    return mqCoarse.matches||mqNarrow.matches;
+  }
+  function syncMobileUi(){
+    const on=mobileUiActive();
+    document.body.classList.toggle('mobile-ui',on);
+    const hud=document.getElementById('touchHud');
+    if(hud) hud.setAttribute('aria-hidden', on?'false':'true');
+  }
+  syncMobileUi();
+  mqListen(mqCoarse,syncMobileUi);
+  mqListen(mqNarrow,syncMobileUi);
+
+  const DIR_KEY={ up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight' };
+  let pulseIv=null, actIv=null;
+  const keysHeldByTouch=new Set();
+
+  function unlockAudio(){
+    if(window.soundtrack&&typeof window.soundtrack.resume==='function')window.soundtrack.resume();
+  }
+
+  function pulseVertical(dir){
+    if(dir==='up') G.upBtn=true;
+    else if(dir==='down') G.downBtn=true;
+  }
+
+  function applyDirection(dir, active){
+    const k=DIR_KEY[dir];
+    if(!k)return;
+    if(active){
+      G.keys[k]=true;
+      keysHeldByTouch.add(k);
+      pulseVertical(dir);
+    }else{
+      if(keysHeldByTouch.has(k)){
+        keysHeldByTouch.delete(k);
+        delete G.keys[k];
+      }
+    }
+  }
+
+  function clearPulseRepeat(){ if(pulseIv){clearInterval(pulseIv);pulseIv=null;} }
+  function clearActRepeat(){ if(actIv){clearInterval(actIv);actIv=null;} }
+
+  function bindDirection(el, dir){
+    if(!el)return;
+    const activeCls='touch-zone-active';
+    function armRepeat(){
+      clearPulseRepeat();
+      if(mqReduceMotion.matches)return;
+      pulseIv=setInterval(()=>pulseVertical(dir),155);
+    }
+    function safeRelease(elNode, pid){
+      try{ elNode.releasePointerCapture(pid); }catch(_){}
+    }
+    el.addEventListener('pointerdown', e=>{
+      if(!mobileUiActive())return;
+      e.preventDefault();
+      unlockAudio();
+      try{ el.setPointerCapture(e.pointerId); }catch(_){}
+      el.classList.add(activeCls);
+      applyDirection(dir,true);
+      armRepeat();
+    });
+    el.addEventListener('pointerup', e=>{
+      safeRelease(el,e.pointerId);
+      el.classList.remove(activeCls);
+      clearPulseRepeat();
+      applyDirection(dir,false);
+    });
+    el.addEventListener('pointercancel', ()=>{
+      el.classList.remove(activeCls);
+      clearPulseRepeat();
+      applyDirection(dir,false);
+    });
+    el.addEventListener('lostpointercapture', ()=>{
+      el.classList.remove(activeCls);
+      clearPulseRepeat();
+      applyDirection(dir,false);
+    });
+  }
+
+  const tact=document.getElementById('touchAct');
+  const tactCls='touch-act-active';
+  if(tact){
+    function safeReleaseAct(pid){
+      try{ tact.releasePointerCapture(pid); }catch(_){}
+    }
+    tact.addEventListener('pointerdown', e=>{
+      if(!mobileUiActive())return;
+      e.preventDefault();
+      unlockAudio();
+      try{ tact.setPointerCapture(e.pointerId); }catch(_){}
+      tact.classList.add(tactCls);
+      clearActRepeat();
+      G.aBtn=true;
+      if(!mqReduceMotion.matches){
+        actIv=setInterval(()=>{ G.aBtn=true; },320);
+      }
+    });
+    tact.addEventListener('pointerup', e=>{
+      safeReleaseAct(e.pointerId);
+      tact.classList.remove(tactCls);
+      clearActRepeat();
+    });
+    tact.addEventListener('pointercancel', ()=>{
+      tact.classList.remove(tactCls);
+      clearActRepeat();
+    });
+    tact.addEventListener('lostpointercapture', ()=>{
+      tact.classList.remove(tactCls);
+      clearActRepeat();
+    });
+  }
+
+  bindDirection(document.getElementById('tzUp'),'up');
+  bindDirection(document.getElementById('tzDown'),'down');
+  bindDirection(document.getElementById('tzLeft'),'left');
+  bindDirection(document.getElementById('tzRight'),'right');
+})();
 
 function flashScreen(){const f=document.getElementById('flash');f.className='';void f.offsetWidth;f.className='on';}
 
@@ -1225,7 +1633,7 @@ function drawCharlie(ox,oy,tick=0,facing='right'){
 function drawJo(ox,oy,tick=0){
   const x=Math.floor(ox),y=Math.floor(oy);
   const bob=Math.floor(tick/11)%2;
-  const SK='#e8d0b8';
+  const SK='#c8a860';
   const HR='#4a3028';
   const TOP='#6a5880';
   const PT='#3a3448';
@@ -1240,8 +1648,8 @@ function drawJo(ox,oy,tick=0){
   r(x+10,y+8,4,5,SK);
   r(x+6,y+2,12,9,SK);
   r(x+8,y+6,2,2,'#2a2018'); r(x+14,y+6,2,2,'#2a2018');
-  r(x+10,y+10,4,1,'#c89888');
-  r(x+9,y+9,2,1,'#c89888'); r(x+13,y+9,2,1,'#c89888');
+  r(x+10,y+10,4,1,'#a07838');
+  r(x+9,y+9,2,1,'#a07838'); r(x+13,y+9,2,1,'#a07838');
   r(x+5,y-2,14,6,HR);
   r(x+4,y+2,5,9,HR); r(x+17,y+2,5,9,HR);
 }
@@ -1722,8 +2130,8 @@ function drawWomanKitchen(ox,oy,handPause=false){
   r(x+5,y,14,4,'#2a1808'); r(x+16,y+4,3,8,'#2a1808');
 }
 
-// NPC: Sadonna — black hair, Asian skin, white top
-function drawSadonna(ox,oy){
+// NPC: Sardonna — black hair, Asian skin, white top
+function drawSardonna(ox,oy){
   const x=Math.floor(ox),y=Math.floor(oy);
   const SK='#d4b86a', HR='#0a0a0a';
   r(x+5,y+13,14,14,'#d8e4f2'); // light blue-white top (reads on pale café floor)
@@ -2831,10 +3239,10 @@ function drawFatherWorld(wx,wy,tick){
   drawFather(px,py);
   npcNameTag(px+8,py+14,'Dad','#c8e0f8');
 }
-function drawSadonnaWorld(wx,wy,tick){
+function drawSardonnaWorld(wx,wy,tick){
   const px=Math.floor(wx-G.camX)-6, py=Math.floor(wy-G.camY)-14;
-  drawSadonna(px,py);
-  npcNameTag(px+8,py+14,'Sadonna','#f0f0f0');
+  drawSardonna(px,py);
+  npcNameTag(px+8,py+14,'Sardonna','#f0f0f0');
 }
 function drawWingWorld(wx,wy,tick){
   const px=Math.floor(wx-G.camX)-6, py=Math.floor(wy-G.camY)-14;
@@ -4052,7 +4460,7 @@ function drawCafeInterior(indX,indY,tick){
   const wingX=CX+74, wingY=sodY;
   r(sodX+3,sodY+29,18,4,'rgba(0,0,0,0.18)');
   r(wingX+3,wingY+29,18,4,'rgba(0,0,0,0.18)');
-  drawSadonna(sodX,sodY);
+  drawSardonna(sodX,sodY);
   drawWing(wingX,wingY,0);
 
   function cafeLabel(x,y,name){
@@ -4062,16 +4470,30 @@ function drawCafeInterior(indX,indY,tick){
     ctx.fillStyle='#f0f0f0';
     ctx.fillText(name,x+2,y-4);
   }
-  cafeLabel(sodX,sodY,'Sadonna');
+  cafeLabel(sodX,sodY,'Sardonna');
   cafeLabel(wingX,sodY-14,'Wing');
 
-  // May + Kobe (clamped to room)
-  const miy=Math.min(Math.max(indY,RY+20),RY+RH-30);
-  const mix=Math.min(Math.max(indX,RX+10),RX+RW-30);
+  // May + Kobe in café
+  const miy=Math.min(Math.max(indY,RY+22),RY+RH-30);
+  const mix=Math.min(Math.max(indX,RX+14),RX+RW-30);
+
+  // May (stationary, clamped)
   drawMay(mix,miy,tick,G.facing||'down');
-  drawKobe(mix-26,miy+4,tick,G.facing);
   cafeLabel(mix,miy,'May');
-  cafeLabel(mix-26,miy+4,'Kobe');
+
+  // Kobe roams freely around the café at Charlie-play speed
+  {
+    const spd=(G.tick||0)*0.028;
+    const cx0=RX+RW*0.52, cy0=RY+RH*0.55;
+    const rx=RW*0.28, ry=RH*0.22;
+    const kbX=cx0+Math.cos(spd)*rx+Math.sin(spd*1.7)*14;
+    const kbY=cy0+Math.sin(spd*1.3)*ry+Math.cos(spd*1.9)*8;
+    const kbFace=Math.cos(spd)<0?'left':'right';
+    const hop=1+Math.sin((G.tick||0)*0.18)*0.07;
+    ctx.save();ctx.translate(kbX,kbY);ctx.scale(1.06*hop,1.06*hop);drawKobe(0,0,(G.tick||0)*2,kbFace);ctx.restore();
+    cafeLabel(kbX,kbY,'Kobe');
+    drawPlayBarkBubble(kbX,kbY,G.tick||0,7,false);
+  }
 
   // Talk prompt — between Sodonna & Wing behind counter
   const sd=Math.hypot(mix-((sodX+wingX)/2+11),miy-(CY+40));
@@ -4156,7 +4578,7 @@ const PORTRAIT_IMGS={
   gary:    DIALOG_GARY_PORTRAIT,
   may:     DIALOG_MAY_PORTRAIT,
   wing:    DIALOG_WING_PORTRAIT,
-  sadonna: DIALOG_SADONNA_PORTRAIT,
+  sardonna: DIALOG_SARDONNA_PORTRAIT,
   kobe:    DIALOG_KOBE_PORTRAIT,
   dad:     DIALOG_DAD_PORTRAIT,
   jo:      DIALOG_JO_PORTRAIT,
@@ -4198,9 +4620,27 @@ function drawDialogPortrait(nl, px, py, pw, ph){
   else if(nl==='jo')                  drawJo(0,0);
   else if(nl==='charlie')             drawCharlie(0,0,t,'right');
   else if(nl==='wing')                drawWing(0,0,t);
-  else if(nl==='sadonna')             drawSadonna(0,0);
+  else if(nl==='sardonna')             drawSardonna(0,0);
   else if(nl==='gate agent'||nl==='agent') drawGateAgent(0,0);
-  else {
+  else if(nl==='moving details'){
+    ctx.restore();ctx.save();ctx.beginPath();ctx.rect(px,py,pw,ph);ctx.clip();
+    ctx.translate(px+pw/2,py+ph*0.88);ctx.scale(2.6,2.6);ctx.translate(-12,-30);drawAgent(0,0);
+  } else if(nl==='moving costs'){
+    ctx.restore();ctx.save();ctx.beginPath();ctx.rect(px,py,pw,ph);ctx.clip();
+    ctx.translate(px+pw*0.5,py+ph*0.75);ctx.scale(2.0,2.0);ctx.translate(-14,-18);drawInvoice(0,0,G?G.tick:0);
+  } else if(nl==='naked man'){
+    ctx.restore();ctx.save();ctx.beginPath();ctx.rect(px,py,pw,ph);ctx.clip();
+    ctx.translate(px+pw/2,py+ph*0.88);ctx.scale(2.8,2.8);ctx.translate(-12,-30);drawNaked(0,0,G?G.tick:0);
+  } else if(nl==='dishes'){
+    ctx.restore();ctx.save();ctx.beginPath();ctx.rect(px,py,pw,ph);ctx.clip();
+    ctx.translate(px+pw*0.5,py+ph*0.72);ctx.scale(1.8,1.8);ctx.translate(-16,-14);drawDishesEncounter(0,0,G?G.tick:0);
+  } else if(nl==='city bus'){
+    ctx.restore();ctx.save();ctx.beginPath();ctx.rect(px,py,pw,ph);ctx.clip();
+    ctx.translate(px+pw*0.5,py+ph*0.62);ctx.scale(0.95,0.95);ctx.translate(-50,-32);drawBusEncounter(0,0,G?G.tick:0);
+  } else if(nl==='airpods'){
+    ctx.restore();ctx.save();ctx.beginPath();ctx.rect(px,py,pw,ph);ctx.clip();
+    ctx.translate(px+pw*0.5,py+ph*0.58);ctx.scale(1.6,1.6);ctx.translate(-20,-16);drawAirPodsEncounter(0,0,G?G.tick:0);
+  } else {
     ctx.restore();
     ctx.save();
     ctx.beginPath();ctx.rect(px,py,pw,ph);ctx.clip();
@@ -4217,21 +4657,24 @@ function drawDialogPortrait(nl, px, py, pw, ph){
 function drawDialog(lines,speaker='',opts){
   opts=opts||{};
   const narrowBattle=!!opts.narrowBattle;
-  const bx=6;
-  const bw=narrowBattle?Math.floor(W-238):(W-12);
+  // In battle: start after the left column (HP bar + attack menu, ~206px wide) and run to right edge
+  // Non-battle: full-width bottom bar as before
+  const LEFT_COL=210; // width of left column (HP bar + attack menu)
+  const bx=narrowBattle?LEFT_COL+6:6;
+  const bw=narrowBattle?(W-LEFT_COL-18):(W-12);
   let bh=narrowBattle?116:122;
   let by=narrowBattle?(H-14-bh):(H-128);
   const norm=normalizeDialogSpeaker(speaker);
   const nl=norm.toLowerCase();
-  const NAMED_SPEAKERS=new Set(['may','kobe','grandma','gary','dad','jo','charlie','wing','sadonna','gate agent','agent']);
-  // Show portrait for any known speaker
-  const hasPortrait = NAMED_SPEAKERS.has(nl) || nl.length>0;
+  const NAMED_SPEAKERS=new Set(['may','kobe','grandma','gary','dad','jo','charlie','wing','sardonna','gate agent','agent','moving details','moving costs','naked man','dishes','city bus','airpods']);
+  // Show portrait only for explicitly known speakers
+  const hasPortrait = NAMED_SPEAKERS.has(nl);
+  const showPortrait = hasPortrait;
   const PW=80, PH=112;  // portrait-aspect to match the PNG files
 
   let textLeft=bx+16;
-  if(hasPortrait)
+  if(showPortrait)
     textLeft=Math.min(bx+12+PW+14, bx+bw-52);
-
   let wrappedBody=[];
   let lineGap=narrowBattle?17:21;
   let bodyFontPx=narrowBattle?12:14;
@@ -4266,11 +4709,24 @@ function drawDialog(lines,speaker='',opts){
   ctx.strokeStyle=C.uiB2;ctx.lineWidth=2;ctx.strokeRect(bx+5,by+5,bw-10,bh-10);
   ctx.strokeStyle=C.uiB;ctx.lineWidth=1;ctx.strokeRect(bx+7,by+7,bw-14,bh-14);
 
-  if(hasPortrait){
-    const px=bx+12, py=by+bh-PH-12;
-    drawDialogPortrait(nl, px, py, PW, PH);
-    ctx.strokeStyle=C.uiB2;ctx.lineWidth=2;ctx.strokeRect(px+1,py+1,PW-2,PH-2);
-    ctx.strokeStyle=C.uiB;ctx.lineWidth=1;ctx.strokeRect(px+3,py+3,PW-6,PH-6);
+  if(showPortrait){
+    // In narrowBattle the box can be short — shrink portrait to always sit inside
+    const maxPH=narrowBattle?Math.min(PH,bh-12):PH;
+    const maxPW=narrowBattle?Math.round(PW*(maxPH/PH)):PW;
+    const px=bx+8;
+    const py=by+bh-maxPH-6;  // pin to bottom of box with 6px margin
+    const clampedPy=Math.max(by+6,py);  // never above box top
+    // Hard-clip portrait to dialog box bounds so it can never bleed out
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(bx+4, by+4, bw-8, bh-8);
+    ctx.clip();
+    drawDialogPortrait(nl, px, clampedPy, maxPW, maxPH);
+    ctx.restore();
+    ctx.strokeStyle=C.uiB2;ctx.lineWidth=2;ctx.strokeRect(px+1,clampedPy+1,maxPW-2,maxPH-2);
+    ctx.strokeStyle=C.uiB;ctx.lineWidth=1;ctx.strokeRect(px+3,clampedPy+3,maxPW-6,maxPH-6);
+    // Update textLeft to stay right of the actual portrait width used
+    textLeft=bx+maxPW+20;
   }
 
   ctx.fillStyle=C.white;
@@ -4402,7 +4858,274 @@ function drawBattlePeeSplash(fr){
   ctx.restore();
 }
 
-/** Bus / AirPods stay ~same scale; human-sized encounters scale up to match */
+function drawKobeBomb(fr, phase, phaseTimer){
+  // phase: 'throw' = in-flight arc, 'fuse' = sitting with lit wick, 'boom' = explosion
+  const startX=80, startY=H-220;
+  const landX=W-160, landY=H-270;
+
+  if(phase==='throw'){
+    // Arc flight from May toward enemy over 0.7s
+    const prog=Math.min(1, phaseTimer/0.7);
+    const arcY=Math.sin(prog*Math.PI)*-100;
+    const bx=startX+(landX-startX)*prog;
+    const by=startY+(landY-startY)*prog+arcY;
+    const rot=prog*Math.PI*3;
+
+    // Bomb body — round black with spinning
+    ctx.save();
+    ctx.translate(bx,by);
+    ctx.rotate(rot);
+    // Body
+    ctx.fillStyle='#1a1a1a';
+    ctx.beginPath();ctx.arc(0,0,10,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#2e2e2e';
+    ctx.beginPath();ctx.arc(-3,-3,4,0,Math.PI*2);ctx.fill(); // shine
+    // Wick
+    ctx.strokeStyle='#8B6914';ctx.lineWidth=2;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(6,-8);ctx.quadraticCurveTo(14,-14,10,-20);ctx.stroke();
+    // Spark at wick tip — flicker
+    const sp=Math.sin(fr*0.8)*3;
+    ctx.fillStyle='#ffcc00';ctx.beginPath();ctx.arc(10+sp*0.3,-20+sp,3,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#ff6600';ctx.beginPath();ctx.arc(10,-20,2,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+
+    // Trail sparks
+    ctx.save();ctx.globalAlpha=0.6;
+    for(let i=0;i<4;i++){
+      const tp=Math.max(0,prog-(i+1)*0.06);
+      const tx=startX+(landX-startX)*tp;
+      const ty=startY+(landY-startY)*tp+Math.sin(tp*Math.PI)*-100;
+      ctx.fillStyle=i<2?'#ffaa00':'#ff6600';
+      ctx.beginPath();ctx.arc(tx,ty,3-i*0.5,0,Math.PI*2);ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  else if(phase==='fuse'){
+    // Bomb sits at landX,landY — wick burns down over 2s
+    const burnProg=Math.min(1, phaseTimer/2.0); // 0=full wick, 1=gone
+    const wickLen=22*(1-burnProg); // wick shortens
+
+    // Danger glow pulses faster as wick burns
+    const glowFreq=2+burnProg*6;
+    const glow=0.3+Math.sin(fr*glowFreq)*0.2;
+    ctx.save();
+    ctx.globalAlpha=glow;
+    ctx.fillStyle='#ff4400';
+    ctx.beginPath();ctx.arc(landX,landY,22+burnProg*8,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+
+    // Bomb body
+    ctx.save();ctx.translate(landX,landY);
+    ctx.fillStyle='#1a1a1a';
+    ctx.beginPath();ctx.arc(0,0,11,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#333';
+    ctx.beginPath();ctx.arc(-3,-4,4,0,Math.PI*2);ctx.fill();
+    // Wick — burns shorter
+    ctx.strokeStyle='#8B6914';ctx.lineWidth=2.5;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(7,-9);
+    ctx.quadraticCurveTo(7+wickLen*0.4,-9-wickLen*0.6,7+wickLen*0.3,-9-wickLen);
+    ctx.stroke();
+    // Spark at tip — frantic flicker near end
+    if(wickLen>1){
+      const tipX=7+wickLen*0.3, tipY=-9-wickLen;
+      const flick=Math.sin(fr*(1+burnProg*4))*3*(1+burnProg);
+      ctx.fillStyle='#ffdd00';ctx.beginPath();ctx.arc(tipX+flick*0.3,tipY+flick*0.2,3+burnProg*2,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#ffffff';ctx.beginPath();ctx.arc(tipX,tipY,1.5,0,Math.PI*2);ctx.fill();
+      // Ember sparks flying off
+      ctx.globalAlpha=0.8;
+      for(let i=0;i<3;i++){
+        const sa=(fr*0.3+i*2.1)%(Math.PI*2);
+        ctx.fillStyle=i===0?'#ffaa00':'#ff6600';
+        ctx.beginPath();ctx.arc(tipX+Math.cos(sa)*(3+i*2),tipY+Math.sin(sa)*(2+i),1.5,0,Math.PI*2);ctx.fill();
+      }
+    }
+    ctx.restore();
+
+    // Countdown hint text — flickers urgently near end
+    const urgency=burnProg>0.7;
+    ctx.save();
+    ctx.globalAlpha=urgency?(0.6+Math.sin(fr*0.5)*0.4):0.55;
+    ctx.fillStyle=urgency?'#ff4400':'#ffcc44';
+    ctx.font=`bold ${urgency?14:11}px monospace`;ctx.textAlign='center';
+    ctx.fillText(urgency?'!!!':'lit...',landX,landY-38);
+    ctx.restore();
+  }
+
+  else if(phase==='boom'){
+    // EXPLOSION — phaseTimer 0→0.8s
+    const bp=Math.min(1, phaseTimer/0.8);
+    const eX=landX, eY=landY;
+
+    // Shockwave rings expanding outward
+    ctx.save();
+    for(let ring=0;ring<3;ring++){
+      const rp=Math.max(0, bp-ring*0.12);
+      if(rp<=0)continue;
+      const rad=rp*120+ring*20;
+      ctx.globalAlpha=Math.max(0, (1-rp)*0.7);
+      ctx.strokeStyle=ring===0?'#ffffff':ring===1?'#ffcc00':'#ff6600';
+      ctx.lineWidth=ring===0?5:3;
+      ctx.beginPath();ctx.arc(eX,eY,rad,0,Math.PI*2);ctx.stroke();
+    }
+    ctx.restore();
+
+    // Fireball core
+    if(bp<0.5){
+      const fRad=bp*180;
+      ctx.save();
+      ctx.globalAlpha=1-bp*1.8;
+      ctx.fillStyle='#ffffff';ctx.beginPath();ctx.arc(eX,eY,fRad*0.3,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#ffee44';ctx.beginPath();ctx.arc(eX,eY,fRad*0.55,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#ff7700';ctx.beginPath();ctx.arc(eX,eY,fRad*0.8,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#cc3300';ctx.beginPath();ctx.arc(eX,eY,fRad,0,Math.PI*2);ctx.fill();
+      ctx.restore();
+    }
+
+    // Debris chunks flying out
+    ctx.save();
+    for(let i=0;i<10;i++){
+      const a=(i/10)*Math.PI*2+0.4;
+      const dist=bp*90+i*6;
+      const dx=eX+Math.cos(a)*dist;
+      const dy=eY+Math.sin(a)*dist*0.7+bp*30*i*0.1;
+      ctx.globalAlpha=Math.max(0,1-bp*1.2);
+      ctx.fillStyle=i%3===0?'#1a1a1a':i%3===1?'#8B5E3C':'#cc4400';
+      ctx.fillRect(dx-3,dy-3,6,6);
+    }
+    ctx.restore();
+
+    // GREEN STENCH CLOUDS — billow outward and rise, replace grey smoke
+    if(bp>0.15){
+      ctx.save();
+      const stenchProg=Math.min(1,(bp-0.15)/0.85);
+      for(let i=0;i<8;i++){
+        const a=(i/8)*Math.PI*2+0.3;
+        const spread=stenchProg*70+i*8;
+        const rise=stenchProg*50+i*4;
+        const cx2=eX+Math.cos(a)*spread;
+        const cy2=eY+Math.sin(a)*spread*0.6-rise;
+        const rad=(stenchProg*0.8)*32+i*2;
+        const alpha=Math.max(0, 0.55-stenchProg*0.35-i*0.03);
+        ctx.globalAlpha=alpha;
+        // Layered green puffs
+        const g=ctx.createRadialGradient(cx2,cy2,0,cx2,cy2,rad);
+        g.addColorStop(0,'rgba(120,200,40,0.9)');
+        g.addColorStop(0.5,'rgba(80,160,20,0.6)');
+        g.addColorStop(1,'rgba(40,100,10,0)');
+        ctx.fillStyle=g;
+        ctx.beginPath();ctx.arc(cx2,cy2,rad,0,Math.PI*2);ctx.fill();
+      }
+      // Extra central stench burst
+      ctx.globalAlpha=Math.max(0,0.6-stenchProg*0.7);
+      const cg=ctx.createRadialGradient(eX,eY,0,eX,eY,stenchProg*55);
+      cg.addColorStop(0,'rgba(180,255,60,0.8)');
+      cg.addColorStop(0.6,'rgba(80,180,20,0.5)');
+      cg.addColorStop(1,'rgba(20,80,0,0)');
+      ctx.fillStyle=cg;
+      ctx.beginPath();ctx.arc(eX,eY,stenchProg*55,0,Math.PI*2);ctx.fill();
+      ctx.restore();
+    }
+
+    // WAVY STINK LINES rising from explosion centre
+    if(bp>0.3){
+      ctx.save();
+      ctx.globalAlpha=Math.max(0, 0.7-(bp-0.3)*1.4);
+      ctx.strokeStyle='#88dd20';ctx.lineWidth=2;ctx.lineCap='round';
+      for(let s=0;s<5;s++){
+        const sx=eX-30+s*15;
+        const baseY=eY+10;
+        const rise=(bp-0.3)*80+s*8;
+        ctx.beginPath();
+        ctx.moveTo(sx,baseY);
+        // wavy squiggle upward
+        ctx.bezierCurveTo(
+          sx+8*(s%2===0?1:-1), baseY-rise*0.33,
+          sx-8*(s%2===0?1:-1), baseY-rise*0.66,
+          sx+5*(s%2===0?1:-1), baseY-rise
+        );
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // FLIES — small black dots buzzing in erratic circles around the blast
+    if(bp>0.35){
+      ctx.save();
+      const flyAlpha=Math.min(1,(bp-0.35)*4);
+      ctx.globalAlpha=flyAlpha*0.85;
+      ctx.fillStyle='#111111';
+      const flyCount=6;
+      for(let f=0;f<flyCount;f++){
+        const orbitR=28+f*12;
+        const speed=3+f*0.7;
+        const angle=(fr*speed*0.08)+(f*(Math.PI*2/flyCount));
+        // erratic wobble
+        const wobX=Math.sin(fr*0.3+f*1.4)*6;
+        const wobY=Math.cos(fr*0.25+f*2.1)*5;
+        const fx=eX+Math.cos(angle)*orbitR+wobX;
+        const fy=eY+Math.sin(angle)*orbitR*0.5-20+wobY;
+        ctx.beginPath();ctx.arc(fx,fy,2,0,Math.PI*2);ctx.fill();
+        // tiny wings
+        ctx.globalAlpha=flyAlpha*0.4;
+        ctx.fillStyle='#aaddff';
+        ctx.beginPath();ctx.ellipse(fx-3,fy-1,3,1.5,angle,0,Math.PI*2);ctx.fill();
+        ctx.beginPath();ctx.ellipse(fx+3,fy-1,3,1.5,angle,0,Math.PI*2);ctx.fill();
+        ctx.globalAlpha=flyAlpha*0.85;
+        ctx.fillStyle='#111111';
+      }
+      ctx.restore();
+    }
+
+    // 💩 emoji fragments spinning outward
+    if(bp<0.5){
+      ctx.save();
+      ctx.globalAlpha=Math.max(0,1-bp*2.5);
+      ctx.font='14px monospace';ctx.textAlign='center';
+      for(let p=0;p<4;p++){
+        const pa=(p/4)*Math.PI*2+bp*2;
+        const pd=bp*60+p*10;
+        ctx.save();
+        ctx.translate(eX+Math.cos(pa)*pd, eY+Math.sin(pa)*pd*0.6);
+        ctx.rotate(bp*Math.PI*3+p);
+        ctx.fillText('💩',0,0);
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    // BOOM! text — big flash
+    if(bp<0.55){
+      const scale=1+bp*0.8;
+      ctx.save();
+      ctx.globalAlpha=Math.max(0,1-bp*2);
+      ctx.translate(eX,eY-60);ctx.scale(scale,scale);
+      ctx.fillStyle='#ffffff';ctx.font='bold 32px monospace';ctx.textAlign='center';
+      ctx.fillText('BOOM!',2,2);
+      ctx.fillStyle='#ffee00';ctx.fillText('BOOM!',0,0);
+      ctx.restore();
+    }
+
+    // STINKS! label fades in with the stench (replaces STUNNED during boom)
+    if(bp>0.35&&bp<0.75){
+      ctx.save();
+      ctx.globalAlpha=Math.min(1,(bp-0.35)*4)*Math.max(0,1-(bp-0.6)*8);
+      ctx.fillStyle='#88ff22';ctx.font='bold 15px monospace';ctx.textAlign='center';
+      ctx.fillText('IT STINKS!!',eX,eY-90);
+      ctx.restore();
+    }
+
+    // STUNNED label fades in after boom
+    if(bp>0.4){
+      ctx.save();
+      ctx.globalAlpha=Math.min(1,(bp-0.4)*3);
+      ctx.fillStyle='#ff4444';ctx.font='bold 16px monospace';ctx.textAlign='center';
+      ctx.fillText('STUNNED!',eX,eY+80);
+      ctx.restore();
+    }
+  }
+  ctx.textAlign='left';
+}
 function battleEncounterEnemyScale(sprite){
   if(sprite==='bus'||sprite==='airpods') return {mul:1,dy:0};
   if(sprite==='dishes') return {mul:1.36,dy:-16};
@@ -4411,44 +5134,45 @@ function battleEncounterEnemyScale(sprite){
 }
 
 function drawBattleAttackMenu(){
-  const mx=W-224,my=H-154,mw=206,mh=142;
-  const innerW=mw-28;
+  // Sits directly under the May/Kobe HP bar (mbx=12, mby=H-172, h=50) with 6px gap
+  const mx=12,my=H-172+50+6,mw=194,mh=138;
+  const innerW=mw-20;
+  const clipY=my+28, clipH=mh-34;
   r(mx-3,my-3,mw+6,mh+6,C.uiB);r(mx,my,mw,mh,C.uiBg);
   ctx.strokeStyle=C.uiB2;ctx.lineWidth=2;ctx.strokeRect(mx+4,my+4,mw-8,mh-8);
-  ctx.fillStyle=C.white;ctx.font='bold 12px monospace';
-  ctx.fillText('Pick Kobe\u2019s move:',mx+14,my+24);
+  // Header — outside clip
+  ctx.fillStyle=C.white;ctx.font='bold 11px monospace';
+  ctx.fillText('Pick Kobe\u2019s move:',mx+12,my+20);
+  // Hard clip for all content below header
   ctx.save();
-  ctx.beginPath(); ctx.rect(mx+8,my+28,mw-16,mh-34); ctx.clip();
+  ctx.beginPath();ctx.rect(mx+4,clipY,mw-8,clipH);ctx.clip();
   const sel=G.kobeAttackPick|0;
+  const bombUsed=!!G.kobeBombUsed;
+  let yy=clipY+12;
+  const LH=16; // line height per move row
+  // ── CHOMP ──
   ctx.font='bold 11px monospace';
-  const padSel=(sel===0?'\u25ba ':'   ');
-  const chompWrapped=wrapDialogCanvasLines(ctx,'CHOMP — bite!',innerW-16);
-  let yy=my+38;
   ctx.fillStyle=sel===0?'#fff8c8':'rgba(200,190,160,0.65)';
-  chompWrapped.slice(0,2).forEach((ln,i)=>{
-    ctx.fillText((i===0?padSel:'     ')+ln,mx+14,yy); yy+=14;
-  });
-  const padSel2=(sel===1?'\u25ba ':'   ');
-  const markWrapped=wrapDialogCanvasLines(ctx,'MARK — ...you know.',innerW-16);
+  ctx.fillText((sel===0?'\u25ba ':'  ')+'CHOMP \u2014 bite!',mx+10,yy); yy+=LH;
+  // ── MARK ──
   ctx.fillStyle=sel===1?'#fff8c8':'rgba(200,190,160,0.65)';
-  markWrapped.slice(0,2).forEach((ln,i)=>{
-    ctx.fillText((i===0?padSel2:'     ')+ln,mx+14,yy); yy+=14;
-  });
-  ctx.fillStyle='rgba(180,160,120,0.75)';ctx.font='10px monospace';
-  yy+=4;
-  wrapDialogCanvasLines(ctx,'\u2191 / \u2193 choose   SPACE / ENTER',innerW).slice(0,2).forEach(ln=>{
-    ctx.fillText(ln,mx+14,yy); yy+=13;
-  });
+  ctx.fillText((sel===1?'\u25ba ':'  ')+'MARK \u2014 ...you know.',mx+10,yy); yy+=LH;
+  // ── BOMB ──
+  ctx.fillStyle=bombUsed?'rgba(130,110,90,0.45)':sel===2?'#c8ffb8':'rgba(160,220,140,0.65)';
+  ctx.fillText((sel===2?'\u25ba ':'  ')+(bombUsed?'BOMB \u2014 used':'BOMB \u2014 stinky attack'),mx+10,yy); yy+=LH;
+  // Divider
+  yy+=3;
+  ctx.fillStyle='rgba(120,110,90,0.4)';
+  ctx.fillRect(mx+8,yy,mw-16,1);
+  yy+=6;
+  // Controls hint
+  ctx.fillStyle='rgba(180,160,120,0.75)';ctx.font='9px monospace';
+  ctx.fillText('\u2191\u2193 choose   SPACE/ENTER',mx+10,yy); yy+=13;
+  // Hits landed
   const attacks=G.kobeAttacks||0;
-  ctx.fillStyle='#c49a5a';ctx.font='10px monospace';
-  const starLine='Hits landed: '+'\u2605'.repeat(attacks)+'\u2606'.repeat(Math.max(0,BATTLE_ROUNDS-attacks));
-  wrapDialogCanvasLines(ctx,starLine,innerW).slice(0,2).forEach(ln=>{
-    ctx.fillText(ln,mx+14,yy); yy+=13;
-  });
-  ctx.fillStyle='rgba(150,220,100,0.85)';ctx.font='9px monospace';
-  wrapDialogCanvasLines(ctx,'Both moves: full damage',innerW).slice(0,2).forEach(ln=>{
-    ctx.fillText(ln,mx+14,yy); yy+=12;
-  });
+  ctx.fillStyle='#c49a5a';
+  const starLine='Hits: '+'\u2605'.repeat(attacks)+'\u2606'.repeat(Math.max(0,BATTLE_ROUNDS-attacks));
+  ctx.fillText(starLine,mx+10,yy);
   ctx.restore();
 }
 
@@ -4517,7 +5241,10 @@ function drawBattle(){
       ctx.save();ctx.translate(kbx,H-236);ctx.scale(2.05,2.05);drawKobe(0,0,fr);ctx.restore();
       if(kobePhase===1) drawWoof(kbx+14,H-252);
       if(kobePhase===2){
-        if(G.kobeAttackPick===1){
+        if(G.kobeAttackPick===2){
+          const bphase=G.battlePhase==='bombfuse'?'fuse':G.battlePhase==='bombexplode'?'boom':'throw';
+          drawKobeBomb(fr, bphase, G.bombPhaseTimer||0);
+        } else if(G.kobeAttackPick===1){
           drawBattlePeeSplash(fr);
           ctx.fillStyle='rgba(232,200,40,0.42)';
           ctx.fillRect(W-278,H-268,135,36);
@@ -4539,7 +5266,10 @@ function drawBattle(){
       ctx.save();ctx.translate(kbx,H-176);ctx.scale(1.6,1.6);drawKobe(0,0,fr);ctx.restore();
       if(kobePhase===1) drawWoof(kbx+10,H-190);
       if(kobePhase===2){
-        if(G.kobeAttackPick===1){
+        if(G.kobeAttackPick===2){
+          const bphase=G.battlePhase==='bombfuse'?'fuse':G.battlePhase==='bombexplode'?'boom':'throw';
+          drawKobeBomb(fr, bphase, G.bombPhaseTimer||0);
+        } else if(G.kobeAttackPick===1){
           drawBattlePeeSplash(fr);
           ctx.fillStyle='rgba(232,200,40,0.42)';
           ctx.fillRect(W-278,H-268,135,36);
@@ -4576,7 +5306,6 @@ function drawBattle(){
   const maxHP=G.mayMaxHP||5;
   r(mbx+8,mby+38,162,8,'#2a2a3a');
   r(mbx+8,mby+38,Math.round(162*mayHP/maxHP),8,mayHP>2?'#3aaa3a':'#cc3030');
-  ctx.fillStyle='#888';ctx.font='9px monospace';ctx.fillText(`HP ${mayHP}/${maxHP}`,mbx+8,mby+58);
 
   if(G.battlePhase==='enemyrecoil'&&G.enemyAttackMsg){
     const [title,desc]=G.enemyAttackMsg;
@@ -4619,8 +5348,13 @@ function drawBattle(){
   } else if(bp==='attack'){
     drawDialog([kLead?'What will Kobe do?':'What will you do?'],'May',{narrowBattle:true});
     drawBattleAttackMenu();
-  } else if(bp==='koberun'||bp==='kobebite'){
-    drawDialog([(G.kobeAttackPick===1?'MARK YOUR SPOT!':'GET THEM KOBE!')],'May',{narrowBattle:true});
+  } else if(bp==='koberun'||bp==='kobebite'||bp==='bombthrow'||bp==='bombfuse'||bp==='bombexplode'){
+    const bombMsg=G.kobeAttackPick===2?(
+      bp==='bombfuse'?'...tick...tick...tick...':
+      bp==='bombexplode'?'BOOM!!!':
+      'BOMBS AWAY!!!'
+    ):G.kobeAttackPick===1?'MARK YOUR SPOT!':'GET THEM KOBE!';
+    drawDialog([bombMsg],'May',{narrowBattle:true});
   } else if(bp==='kobereturn'){
     let msg;
     if(attacksDone>=BATTLE_ROUNDS) msg=kLead?'Absolute legend.':'That did it!';
@@ -4628,7 +5362,8 @@ function drawBattle(){
     else msg=kLead?'Solid — keep him busy!':'Nice — stay on them!';
     drawDialog([msg],'May',{narrowBattle:true});
   } else if(bp==='result'){
-    drawDialog([enc.lines[enc.lines.length-1]],'\u2605 RESULT',{narrowBattle:true});
+    const winner=kLead?'kobe':'may';
+    drawDialog([enc.lines[enc.lines.length-1]],winner,{narrowBattle:true});
   }
 }
 
@@ -4708,7 +5443,7 @@ function drawCabFarewellScene(){
   drawMay(msx,msy,G.tick,'right');
   npcNameTag(msx+2,msy+14,'May','#f8e8d8');
 
-  drawSadonnaWorld(774, landY, G.tick);
+  drawSardonnaWorld(774, landY, G.tick);
   drawWingWorld(816, landY, G.tick);
 
   G.camX=ox; G.camY=oy;
@@ -5502,8 +6237,12 @@ function drawCredits(){
   palmLeft(18,H-112);
   palmRight(W-62,H-112);
 
-  ctx.save();ctx.translate(W/2-154,H/2-118);ctx.scale(3,3);drawMay(0,0,G.tick,'down');ctx.restore();
-  ctx.save();ctx.translate(W/2+86,H/2-74);ctx.scale(2,2);drawKobe(0,0,G.tick);ctx.restore();
+  // Place May and Kobe on the sand (sandTop = shoreY+10 = H*0.70+10)
+  const sandStandY=Math.floor(H*0.70)+10;
+  // May: scale 3 → sprite ~36px tall, so feet at sandStandY means translateY = sandStandY - 36
+  ctx.save();ctx.translate(W/2-100,sandStandY-36);ctx.scale(3,3);drawMay(0,0,G.tick,'down');ctx.restore();
+  // Kobe: scale 2 → sprite ~24px tall
+  ctx.save();ctx.translate(W/2+60,sandStandY-24);ctx.scale(2,2);drawKobe(0,0,G.tick);ctx.restore();
 
   ctx.textAlign='center';
   ctx.lineJoin='round';
@@ -5775,7 +6514,10 @@ function loop(ts){
     if(G.tick<500){
       r(0,H-22,W,22,'rgba(0,0,0,0.5)');
       ctx.fillStyle='rgba(200,190,160,0.8)';ctx.font='11px monospace';ctx.textAlign='center';
-      ctx.fillText('WASD/Arrows: move  \u2014  SPACE/ENTER: interact',W/2,H-7);
+      const hint=document.body.classList.contains('mobile-ui')
+        ? 'Touch pad \u2014 A: interact'
+        : 'WASD/Arrows: move  \u2014  SPACE/ENTER: interact';
+      ctx.fillText(hint,W/2,H-7);
       ctx.textAlign='left';
     }
   }
@@ -5790,6 +6532,11 @@ function loop(ts){
       G.busHonkPlayed=false;
       G.mayHP=G.mayMaxHP;
       G.enemyAttackMsg='';
+      G.kobeBombUsed=false;
+      G.enemyStunned=false;
+      G.fanfareFired=false;
+      G.bombPhaseTimer=0;
+      G.upBtn=false;G.downBtn=false;
     }
 
     if(G.battlePhase==='dialogue'){
@@ -5811,28 +6558,76 @@ function loop(ts){
       if(G.battleTimer>1.2){G.enemyAttackMsg='';G.battleTimer=0;G.battlePhase='attack';}
     } else if(G.battlePhase==='attack'){
       drawBattle();
-      if(G.keys['ArrowUp']||G.keys['w']) G.kobeAttackPick=0;
-      if(G.keys['ArrowDown']||G.keys['s']) G.kobeAttackPick=1;
-      if(G.aBtn){G.aBtn=false;G.battlePhase='koberun';G.kobeBattleX=kobeHeroX();G.kobePhase=1;G.battleTimer=0;}
+      if(G.upBtn){G.upBtn=false;G.kobeAttackPick=((G.kobeAttackPick||0)-1+3)%3;}
+      if(G.downBtn){G.downBtn=false;G.kobeAttackPick=((G.kobeAttackPick||0)+1)%3;}
+      // Skip Kobe Bomb if already used
+      if(G.kobeAttackPick===2&&G.kobeBombUsed) G.kobeAttackPick=0;
+      if(G.aBtn){
+        G.aBtn=false;
+        if(G.kobeAttackPick===2&&G.kobeBombUsed){
+          // already used — do nothing, let player re-pick
+        } else {
+          G.bombStartFr=G.tick;
+          G.battlePhase='koberun';G.kobeBattleX=kobeHeroX();G.kobePhase=1;G.battleTimer=0;
+        }
+      }
+    } else if(G.battlePhase==='enemyattack_first'||G.battlePhase==='enemyattack_stunned'){
+      // Enemy stunned by Kobe Bomb — skip their turn
+      G.enemyStunned=false;
+      G.enemyAttackMsg=['💩 STUNNED!','The stinky bomb landed. Enemy is reeling.\nThey skip their turn.'];
+      G.battlePhase='enemyrecoil';G.battleTimer=0;
     } else if(G.battlePhase==='koberun'){
-      G.kobeBattleX+=W*1.4*dt;
+      if(G.kobeAttackPick===2){
+        // Bomb: May winds up and throws — short run then transition to bombthrow
+        G.kobeBattleX+=W*0.8*dt;
+        G.bombPhaseTimer=(G.bombPhaseTimer||0)+dt;
+        drawBattle();
+        if(G.bombPhaseTimer>0.4){G.kobePhase=2;G.battleTimer=0;G.bombPhaseTimer=0;G.battlePhase='bombthrow';}
+      } else {
+        G.kobeBattleX+=W*1.4*dt;
+        drawBattle();
+        if(G.kobeBattleX>W-260){G.kobePhase=2;G.battleTimer=0;G.battlePhase='kobebite';}
+      }
+    } else if(G.battlePhase==='bombthrow'){
+      // Bomb arcs through the air — 0.7s
+      G.bombPhaseTimer=(G.bombPhaseTimer||0)+dt;
       drawBattle();
-      if(G.kobeBattleX>W-260){G.kobePhase=2;G.battleTimer=0;G.battlePhase='kobebite';}
+      if(G.bombPhaseTimer>0.7){G.bombPhaseTimer=0;G.battlePhase='bombfuse';}
+    } else if(G.battlePhase==='bombfuse'){
+      // Bomb sits with lit wick for 2 seconds
+      G.bombPhaseTimer=(G.bombPhaseTimer||0)+dt;
+      drawBattle();
+      if(G.bombPhaseTimer>2.0){G.bombPhaseTimer=0;G.battlePhase='bombexplode';}
+    } else if(G.battlePhase==='bombexplode'){
+      // BOOM — 0.8s explosion
+      G.bombPhaseTimer=(G.bombPhaseTimer||0)+dt;
+      drawBattle();
+      if(G.bombPhaseTimer>0.8){
+        G.kobeAttacks=(G.kobeAttacks||0)+1;
+        G.kobeBombUsed=true;G.enemyStunned=true;
+        G.kobePhase=3;G.kobeBattleX=kobeHeroX();G.battleTimer=0;G.bombPhaseTimer=0;G.battlePhase='kobereturn';
+      }
     } else if(G.battlePhase==='kobebite'){
       drawBattle();
-      if(G.battleTimer>0.6){G.kobeAttacks=(G.kobeAttacks||0)+1;G.kobePhase=3;G.kobeBattleX=kobeHeroX();G.battleTimer=0;G.battlePhase='kobereturn';}
+      if(G.battleTimer>0.6){
+        G.kobeAttacks=(G.kobeAttacks||0)+1;
+        if(G.kobeAttackPick===2){G.kobeBombUsed=true;G.enemyStunned=true;}
+        G.kobePhase=3;G.kobeBattleX=kobeHeroX();G.battleTimer=0;G.battlePhase='kobereturn';
+      }
     } else if(G.battlePhase==='kobereturn'){
       drawBattle();
       if(G.battleTimer>0.4){
         G.kobePhase=0;G.battleTimer=0;
         if((G.kobeAttacks||0)>=BATTLE_ROUNDS){
           G.battlePhase='result';
-          // Fire victory fanfare — stops battle music, plays fanfare once
-          if(window.soundtrack){window.soundtrack.playFanfare();}
+        } else if(G.enemyStunned){
+          G.battlePhase='enemyattack_stunned';
+        } else {
+          G.battlePhase='enemyattack';
         }
-        else G.battlePhase='enemyattack';
       }
     } else if(G.battlePhase==='result'){
+      if(!G.fanfareFired){G.fanfareFired=true;if(window.soundtrack)window.soundtrack.playFanfare();}
       drawBattle();
       if(G.aBtn){
         G.aBtn=false;
@@ -5840,6 +6635,7 @@ function loop(ts){
         const wasEnc=G.curEnc;
         G.curEnc=-1;G.dline=0;G.battlePhase=null;G.kobeAttacks=0;G.kobePhase=0;
         G.kobeBattleX=kobeHeroX();G.battleTimer=0;G.enemyAttackMsg='';G.kobeAttackPick=0;
+        G.kobeBombUsed=false;G.enemyStunned=false;G.fanfareFired=false;G.bombPhaseTimer=0;
         G.mayHP=G.mayMaxHP; // heal after battle
         G.cooldown=1.6;flashScreen();
         if(wasEnc===2){G.mode='CAVE';}
@@ -5861,13 +6657,13 @@ function loop(ts){
     drawHUD();
     const npcLines={
       gary:[
-        {sp:'Gary', tx:'(He looks up from his phone — rare eye contact.)'},
+        {sp:'Gary', tx:'(Smiling and greeting you and Kobe as you walk up!)'},
         {sp:'Gary', tx:'I\'m really happy I got to know you and Robbie.\nThat actually means something in this neighbourhood.'},
-        {sp:'May', tx:'Same here. For real.'},
-        {sp:'Gary', tx:'If you need me: I\'m usually outside No Title,\nright here on the pavement.'},
+        {sp:'May', tx:'Same here. For real!'},
+        {sp:'Gary', tx:'If you need me: I\'m usually outside No Title,\nright here outside.'},
         {sp:'Gary', tx:'Not here? Check the card shop a few doors down —\nI basically live between those two spots.'},
-        {sp:'Gary', tx:'Either way, you\'re welcome anytime.'},
-        {sp:'May', tx:'Locked in. Take care out here.'},
+        {sp:'Gary', tx:'Either way, we will miss you, but it\'s so exciting you\'re going to Barcelona! Don\'t forget to visit!'},
+        {sp:'May', tx:'Thanks Gary, we will be in touch! Good luck with the pulls and, take care out here.'},
       ],
     };
     const nlines=npcLines[G.npcWho]||[{sp:'???',tx:'...'}];
@@ -5988,12 +6784,12 @@ function loop(ts){
       drawCafeInterior(G.indX,G.indY,G.tick);
     const indLines={
       couple:[
-        {sp:'Sadonna', tx:'MAY! Oh my god, today is the day!'},
+        {sp:'Sardonna', tx:'MAY! Oh my god, today is the day!'},
         {sp:'Wing',    tx:'Barcelona!! We are so happy for you!'},
-        {sp:'Sadonna', tx:'We already planned our visit. 😄'},
+        {sp:'Sardonna', tx:'We already planned our visit. 😄'},
         {sp:'Wing',    tx:'Kobe is going to LOVE the beach.'},
         {sp:'May',     tx:'You two are the best. Genuinely.'},
-        {sp:'Sadonna', tx:'Go!! Go!! Send photos!! ☀️'},
+        {sp:'Sardonna', tx:'Go!! Go!! Send photos!! ☀️'},
       ],
       jo_house:[
         {sp:'Jo', tx:'Okay — Charlie and Kobe had their little lap.\nMay, I am so happy for you. Barcelona is huge.'},
@@ -6001,7 +6797,7 @@ function loop(ts){
         {sp:'Jo', tx:'And I am obviously bringing Charlie.\nThat is not even a conversation.'},
         {sp:'May', tx:'Good. Kobe needs his crew.'},
         {sp:'Charlie', tx:'Woof.'},
-        {sp:'Jo', tx:'Eat something before you fly. This kitchen did not\nsteal itself from Grandma\'s floor plan.'},
+        {sp:'Jo', tx:'Eat something before you fly!'},
       ],
       house_browse:[
         {sp:'Grandma', tx:'Come, sit! Let me look at you!'},
@@ -6014,11 +6810,11 @@ function loop(ts){
       house_revisit:[
         {sp:'Grandma', tx:'Back already? The kettle\'s still warm.'},
         {sp:'May',     tx:'Wanted one more pass through home.'},
-        {sp:'Grandma', tx:'Stay as long as you like, mei mei.'},
+        {sp:'Grandma', tx:'Stay as long as you like, May May.'},
       ],
       may_apt_browse:[
-        {sp:'May', tx:'Four boxes and a duffel.\nEverything left is just walls.'},
-        {sp:'May', tx:'Barcelona tonight. Hard to believe.'},
+        {sp:'May', tx:'Two big suitcases and a backpack...\nEverything left is just walls.'},
+        {sp:'May', tx:'Barcelona tonight. Hard to believe its finally here.'},
         {sp:'Kobe', tx:'Woof.'},
       ],
     };
@@ -6254,7 +7050,7 @@ function loop(ts){
 (function preloadPortraits(){
   var imgs=[
     DIALOG_MAY_PORTRAIT,DIALOG_KOBE_PORTRAIT,DIALOG_GRANDMA_PORTRAIT,
-    DIALOG_GARY_PORTRAIT,DIALOG_SADONNA_PORTRAIT,DIALOG_WING_PORTRAIT,
+    DIALOG_GARY_PORTRAIT,DIALOG_SARDONNA_PORTRAIT,DIALOG_WING_PORTRAIT,
     DIALOG_DAD_PORTRAIT,DIALOG_JO_PORTRAIT,CHARLIE_IMG
   ];
   var loaded=0,started=false;
