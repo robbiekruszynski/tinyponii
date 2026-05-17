@@ -17,16 +17,15 @@ body {
   touch-action: manipulation;
   --touchReserve: 28px;
 }
-/* Portrait: HUD overlays bottom — minimal reserve. Landscape: slim side rail + full canvas height. */
+/* Portrait: HUD overlays bottom. Landscape: HUD overlays right edge — canvas uses full viewport (no side reserve). */
 body.mobile-ui {
   --hudSide: 0px;
   --touchReserve: max(10px, env(safe-area-inset-bottom));
 }
 @media (orientation: landscape) {
   body.mobile-ui {
-    /* ~3×dpad cell + gaps + padding; keeps rail narrow without overlapping the canvas */
-    --hudSide: clamp(108px, 21vmin, 130px);
-    --touchReserve: max(8px, env(safe-area-inset-top), env(safe-area-inset-bottom));
+    --hudSide: 0px;
+    --touchReserve: max(6px, env(safe-area-inset-top), env(safe-area-inset-bottom));
   }
 }
 #stage {
@@ -48,26 +47,25 @@ body.mobile-ui {
 }
 @media (orientation: landscape) {
   body.mobile-ui #stage {
-    flex-direction:row;
-    flex-wrap:nowrap;
+    flex-direction:column;
     justify-content:center;
     align-items:center;
-    gap:clamp(4px, 1.2vmin, 10px);
+    gap:0;
     padding-top:max(2px, env(safe-area-inset-top));
     padding-bottom:max(2px, env(safe-area-inset-bottom));
+    padding-left:max(4px, env(safe-area-inset-left));
+    padding-right:max(4px, env(safe-area-inset-right));
   }
 }
+/* Use dvh so canvas grows when mobile browser chrome hides; controls overlay — no horizontal hudSide reserve */
 #wrap {
   position:relative;
+  --availH:calc(100dvh - var(--touchReserve));
   width:min(
-    calc(100vw - 20px - var(--hudSide, 0px)),
-    calc((100dvh - var(--touchReserve)) * 4 / 3),
-    calc((100svh - var(--touchReserve)) * 4 / 3)
+    calc(100vw - 16px - var(--hudSide, 0px)),
+    calc(var(--availH) * 4 / 3)
   );
-  max-height:min(
-    calc(100dvh - var(--touchReserve)),
-    calc(100svh - var(--touchReserve))
-  );
+  max-height:var(--availH);
   aspect-ratio:4 / 3;
   flex-shrink:0;
 }
@@ -140,19 +138,27 @@ body.mobile-ui #touchHud { display:flex; }
 }
 @media (orientation: landscape) {
   body.mobile-ui #touchHud {
+    position:absolute;
+    left:auto;
+    right:max(4px, env(safe-area-inset-right));
+    top:50%;
+    bottom:auto;
+    transform:translateY(-50%);
+    z-index:8;
     flex-direction:column;
     align-items:center;
     justify-content:center;
     width:auto;
     max-width:none;
-    flex:0 0 auto;
-    padding:0 2px;
-    gap:clamp(6px, 1.8vmin, 12px);
-    background:transparent;
-    backdrop-filter:none;
-    -webkit-backdrop-filter:none;
-    border:none;
-    box-shadow:none;
+    padding:7px 6px 8px;
+    gap:clamp(5px, 1.6vmin, 10px);
+    background:rgba(12,12,22,0.48);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+    border-radius:12px;
+    border:1px solid rgba(255,255,255,0.09);
+    box-shadow:0 4px 20px rgba(0,0,0,0.35);
+    pointer-events:auto;
   }
 }
 .touch-dpad {
@@ -248,6 +254,14 @@ body.mobile-ui .touch-act-label { display:none; }
 @media (prefers-reduced-motion: reduce) {
   .touch-act:active { transform:none; }
 }
+#touchRod{
+  visibility:hidden;width:clamp(38px,9vw,48px);height:clamp(38px,9vw,48px);
+  border-radius:12px;font-size:16px;line-height:1;border:none;margin-top:6px;
+  background:linear-gradient(165deg,rgba(120,200,240,0.35),rgba(40,52,96,0.6));
+  border:1px solid rgba(168,232,112,0.35);color:rgba(248,236,216,0.95);
+  cursor:pointer;touch-action:none;
+}
+body.mobile-ui #touchRod.visible{visibility:visible;}
 </style>
 </head>
 <body>
@@ -268,6 +282,7 @@ body.mobile-ui .touch-act-label { display:none; }
   <div class="touch-act-wrap">
     <button type="button" class="touch-act" id="touchAct" aria-label="Interact">A</button>
     <span class="touch-act-label">Talk / Enter</span>
+    <button type="button" id="touchRod" aria-label="Fish" title="Fish (F)">&#x1F3A3;</button>
   </div>
 </div>
 </div>
@@ -1142,8 +1157,78 @@ const G = {
   keys: {}, tdir: {x:0,y:0},
   kobeAttackPick: 0, // battle: 0 = CHOMP, 1 = MARK (pee) — same damage
   busHonkPlayed: false,
-  joDogPlayT: 0, // Jo's flat: seconds left of Charlie+Kobe gentle play intro before SPACE talk works
+  joDogPlayT: 0, // Jo's flat: seconds left of Charlie+Kobe gentle intro before SPACE talk works
+  // Fishing (explore harbour / water tiles only)
+  kobeFed: false,
+  fishCastBtn: false,
+  touchFishBarHold: false,
+  fishing: {
+    phase: 'IDLE',
+    castT: 0,
+    ripples: [],
+    bx: 0,
+    by: 0,
+    castFromSx: 0,
+    castFromSy: 0,
+    castToSx: 0,
+    castToSy: 0,
+    catchCy: 0,
+    catchVy: 0,
+    fishCy: 0,
+    fishVy: 0,
+    fishPhase: 0,
+    nextDartAt: 0,
+    dartVel: 0,
+    meter: 0,
+    gameT: 0,
+    caughtName: '',
+    escT: 0,
+    feedSub: 'slide',
+    feedT: 0,
+    gulpDone: false,
+    fishFx: 0,
+    fishFy: 0,
+    talkT: 0,
+    catchSpeciesIdx: 0,
+    fishResultPick: 0, // RESULT: 0 = throw back, 1 = feed Kobe (↑/↓ + confirm)
+    fishBarHoldPrev: false, // edge-detect SPACE/touch lift for snap response
+  },
 };
+
+function fishingResetQuiet(){
+  G.touchFishBarHold=false;
+  G.fishing={
+    phase:'IDLE',
+    castT:0,
+    ripples:[],
+    bx:0,
+    by:0,
+    castFromSx:0,
+    castFromSy:0,
+    castToSx:0,
+    castToSy:0,
+    catchCy:0,
+    catchVy:0,
+    fishCy:0,
+    fishVy:0,
+    fishPhase:0,
+    nextDartAt:0,
+    dartVel:0,
+    meter:0,
+    gameT:0,
+    caughtName:'',
+    escT:0,
+    feedSub:'slide',
+    feedT:0,
+    gulpDone:false,
+    fishFx:0,
+    fishFy:0,
+    talkT:0,
+    catchSpeciesIdx:0,
+    fishResultPick:0,
+    fishBarHoldPrev:false,
+  };
+}
 
 function mayFlatFootBlocked(px,py){
   if(G.indLoc!=='may_apt')return false;
@@ -1222,6 +1307,12 @@ const DIALOG_DAD_PORTRAIT    =_loadPortrait('assets/dad.png',    'dad.png');
 const DIALOG_JO_PORTRAIT     =_loadPortrait('assets/jo.png',     'jo.png');
 /** Jo's dog — dialog portrait + world sprite */
 const CHARLIE_IMG=_loadPortrait('assets/charlie.png','charlie.png');
+/** Fish catch illustrations (order matches FISH_CATCH_SPECIES: easy→hard) */
+const FISH_CATCH_IMGS=[
+  _loadPortrait('assets/mayfish.png','mayfish.png'),
+  _loadPortrait('assets/wingfish.png','wingfish.png'),
+  _loadPortrait('assets/grandmafish.png','grandmafish.png'),
+];
 /** Optional night HK cityscape for cockpit windscreen — procedural fallback if missing or unloaded */
 const COCKPIT_HK_BG=new Image();
 COCKPIT_HK_BG.src='assets/hk_cityscape_night.png';
@@ -1232,6 +1323,7 @@ window.addEventListener('keydown',e=>{
   if(e.key===' '||e.key==='Enter') G.aBtn=true;
   if(e.key==='ArrowUp'||e.key==='w') G.upBtn=true;
   if(e.key==='ArrowDown'||e.key==='s') G.downBtn=true;
+  if(e.key==='f'||e.key==='F'){ G.fishCastBtn=true; if(G.mode==='EXPLORE') e.preventDefault();}
 });
 window.addEventListener('keyup',e=>{delete G.keys[e.key];});
 
@@ -1337,9 +1429,12 @@ window.addEventListener('keyup',e=>{delete G.keys[e.key];});
       unlockAudio();
       try{ tact.setPointerCapture(e.pointerId); }catch(_){}
       tact.classList.add(tactCls);
+      const fishPh=G.fishing&&G.fishing.phase;
+      if(G.mode==='EXPLORE'&&fishPh==='MINIGAME')
+        G.touchFishBarHold=true;
       clearActRepeat();
       G.aBtn=true;
-      if(!mqReduceMotion.matches){
+      if(G.mode==='EXPLORE'&&fishPh==='MINIGAME'&&!mqReduceMotion.matches){
         actIv=setInterval(()=>{ G.aBtn=true; },320);
       }
     });
@@ -1347,14 +1442,17 @@ window.addEventListener('keyup',e=>{delete G.keys[e.key];});
       safeReleaseAct(e.pointerId);
       tact.classList.remove(tactCls);
       clearActRepeat();
+      G.touchFishBarHold=false;
     });
     tact.addEventListener('pointercancel', ()=>{
       tact.classList.remove(tactCls);
       clearActRepeat();
+      G.touchFishBarHold=false;
     });
     tact.addEventListener('lostpointercapture', ()=>{
       tact.classList.remove(tactCls);
       clearActRepeat();
+      G.touchFishBarHold=false;
     });
   }
 
@@ -1362,6 +1460,15 @@ window.addEventListener('keyup',e=>{delete G.keys[e.key];});
   bindDirection(document.getElementById('tzDown'),'down');
   bindDirection(document.getElementById('tzLeft'),'left');
   bindDirection(document.getElementById('tzRight'),'right');
+  const trout=document.getElementById('touchRod');
+  if(trout){
+    trout.addEventListener('pointerdown',e=>{
+      if(!mobileUiActive())return;
+      e.preventDefault();
+      unlockAudio();
+      G.fishCastBtn=true;
+    });
+  }
 })();
 
 function flashScreen(){const f=document.getElementById('flash');f.className='';void f.offsetWidth;f.className='on';}
@@ -1654,12 +1761,36 @@ function drawJo(ox,oy,tick=0){
   r(x+4,y+2,5,9,HR); r(x+17,y+2,5,9,HR);
 }
 
-function drawWoof(ox,oy){
-  r(ox,oy-18,36,18,C.white); r(ox-2,oy-20,40,22,'rgba(0,0,0,0.7)');
-  r(ox,oy-18,36,18,C.uiBg);
-  ctx.strokeStyle=C.white;ctx.lineWidth=1;ctx.strokeRect(ox,oy-18,36,18);
-  ctx.fillStyle=C.white;ctx.font='11px monospace';ctx.fillText('Woof!',ox+4,oy-5);
-  r(ox+14,oy,6,6,C.uiBg);
+function drawWoof(ox,oy,caption){
+  if(caption==null||caption===undefined) caption='Woof!';
+  ctx.font='11px monospace';
+  const textW=ctx.measureText(caption).width;
+  const bw=Math.max(36,Math.ceil(textW+14));
+  r(ox,oy-18,bw,18,C.white); r(ox-2,oy-20,bw+4,22,'rgba(0,0,0,0.7)');
+  r(ox,oy-18,bw,18,C.uiBg);
+  ctx.strokeStyle=C.white;ctx.lineWidth=1;ctx.strokeRect(ox,oy-18,bw,18);
+  ctx.fillStyle=C.white;ctx.fillText(caption,ox+4,oy-5);
+  const tailAx=Math.floor(ox+Math.min(22,bw*0.42));
+  r(tailAx,oy,6,6,C.uiBg);
+}
+
+/** Pink hearts drifting above Kobe after a fish snack */
+function drawKobeFishCelebrateHearts(ks,kk,fT,tick){
+  const headCx=ks+22, baseTop=kk-42;
+  for(let i=0;i<4;i++){
+    const t=fT+i*0.29;
+    const wob=Math.sin(tick*0.09+t*5.8+i);
+    const hx=headCx+(i-1.5)*19+wob*7;
+    const rise=t*34+i*28+wob*5;
+    const hy=baseTop-rise*0.85;
+    const fade=fishClamp(1-t*0.22-i*0.05,0.28,1);
+    ctx.globalAlpha=fade*(0.9+Math.sin(tick*0.31+i)*0.08);
+    ctx.fillStyle='#e82858';
+    ctx.font='bold 13px monospace';
+    ctx.textAlign='center'; ctx.fillText('\u2764',Math.round(hx),Math.round(hy));
+    ctx.textAlign='left';
+    ctx.globalAlpha=1;
+  }
 }
 
 function drawPlayBarkBubble(px,py,tick,seed,calm){
@@ -6388,11 +6519,391 @@ function checkCaveSpecial(){
   return null;
 }
 
+// ── Fishing (explore-only, water-edge) ─────────────────────────────────
+/** Indexed catchables: easier first, Grand-Mackerel toughest */
+const FISH_CATCH_SPECIES=[
+  { name:'May Fish', zoneH:60, blob:'#e89aaf', meterGain:0.86, meterLose:0.128,
+    ampMain:0.25, ampSub:0.095, speedMain:2.06, speedSub:5.15, wobble:0.072,
+    dartMul:0.8, dartBoost:23, chase:5.52, friction:0.886 },
+  { name:'Wing Fish', zoneH:47, blob:'#6ec8e8', meterGain:0.7, meterLose:0.218,
+    ampMain:0.42, ampSub:0.145, speedMain:2.38, speedSub:5.65, wobble:0.098,
+    dartMul:1.14, dartBoost:30, chase:6.35, friction:0.852 },
+  { name:'Grand-Mackerel', zoneH:38, blob:'#c9a856', meterGain:0.5, meterLose:0.318,
+    ampMain:0.53, ampSub:0.19, speedMain:2.95, speedSub:6.85, wobble:0.125,
+    dartMul:1.55, dartBoost:36, chase:7.15, friction:0.802 },
+];
+const FISH_BAR_W=28, FISH_BAR_H=180;
+
+function fishActiveSpecies(){
+  const i=fishClamp(G.fishing.catchSpeciesIdx|0,0,FISH_CATCH_SPECIES.length-1);
+  return FISH_CATCH_SPECIES[i];
+}
+
+function fishingBusy(){const p=G.fishing&&G.fishing.phase; return !!(p&&p!=='IDLE');}
+
+function mayCanFishHere(){
+  if(G.mode!=='EXPLORE')return false;
+  const col=Math.floor((G.mx+9)/TILE), row=Math.floor((G.my+18)/TILE);
+  const dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+  for(let i=0;i<dirs.length;i++){
+    const c=col+dirs[i][0], r=row+dirs[i][1];
+    if(c<0||r<0||c>=ECOLS||r>=EROWS)continue;
+    if(extTile(c,r)===T_WATER)return true;
+  }
+  return false;
+}
+
+function adjacentWaterScreen(){
+  const col=Math.floor((G.mx+9)/TILE), row=Math.floor((G.my+18)/TILE);
+  let wc=null,wr=null;
+  const dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+  for(let i=0;i<dirs.length;i++){
+    const c=col+dirs[i][0], r=row+dirs[i][1];
+    if(c<0||r<0||c>=ECOLS||r>=EROWS)continue;
+    if(extTile(c,r)===T_WATER){wc=c;wr=r;break;}
+  }
+  if(wc===null)return null;
+  return {sx:wc*TILE+16-G.camX, sy:wr*TILE+16-G.camY};
+}
+
+let _fishAC=null;
+function fishAudioCtx(){
+  if(!_fishAC)_fishAC=new(window.AudioContext||window.webkitAudioContext)();
+  if(_fishAC.state==='suspended')_fishAC.resume();
+  return _fishAC;
+}
+function sfxFishCast(){try{
+  const ac=fishAudioCtx(),t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();
+  o.type='sine';o.frequency.setValueAtTime(700,t);o.frequency.exponentialRampToValueAtTime(390,t+0.08);
+  g.gain.setValueAtTime(1e-4,t);g.gain.linearRampToValueAtTime(0.035,t+0.012);g.gain.exponentialRampToValueAtTime(1e-4,t+0.098);
+  o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+0.12);
+}catch(_){}}
+function sfxFishSplash(){try{
+  const ac=fishAudioCtx(),t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();
+  o.type='triangle';o.frequency.setValueAtTime(275,t);o.frequency.exponentialRampToValueAtTime(92,t+0.11);
+  g.gain.setValueAtTime(1e-4,t);g.gain.linearRampToValueAtTime(0.055,t+0.016);g.gain.exponentialRampToValueAtTime(1e-4,t+0.12);
+  o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+0.14);
+}catch(_){}}
+function sfxCatchJingle(){try{
+  const ac=fishAudioCtx(), seq=[[660,0.055],[782,0.055],[988,0.1]];
+  for(let i=0;i<seq.length;i++){
+    const fq=seq[i][0], d=seq[i][1], st=ac.currentTime+i*0.052;
+    const o=ac.createOscillator(),g=ac.createGain(); o.type='square'; o.frequency.value=fq;
+    g.gain.setValueAtTime(1e-4,st);g.gain.linearRampToValueAtTime(0.03,st+0.01);g.gain.exponentialRampToValueAtTime(1e-4,st+d);
+    o.connect(g);g.connect(ac.destination);o.start(st);o.stop(st+d+0.02);
+  }
+}catch(_){}}
+function sfxGulpFish(){try{
+  const ac=fishAudioCtx(),t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();
+  o.type='sine';o.frequency.setValueAtTime(210,t);o.frequency.linearRampToValueAtTime(72,t+0.14);
+  g.gain.setValueAtTime(1e-4,t);g.gain.linearRampToValueAtTime(0.09,t+0.02);g.gain.linearRampToValueAtTime(1e-4,t+0.16);
+  o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+0.19);
+}catch(_){}}
+
+function fishClamp(v,a,b){return Math.max(a,Math.min(b,v));}
+
+function startFishingCast(){
+  const tw=adjacentWaterScreen(); if(!tw)return;
+  const F=G.fishing;
+  sfxFishCast();
+  F.phase='CASTING'; F.castT=0; F.ripples=[]; delete F._spl;
+  const msx=G.mx-G.camX, msy=G.my-G.camY;
+  F.castFromSx=msx+16; F.castFromSy=msy+6;
+  F.castToSx=tw.sx; F.castToSy=tw.sy; F.bx=tw.sx; F.by=tw.sy;
+}
+
+function syncTouchRodVisibility(){
+  const b=document.getElementById('touchRod');
+  if(!b)return;
+  b.classList.toggle('visible',document.body.classList.contains('mobile-ui')&&G.mode==='EXPLORE'&&mayCanFishHere()&&!fishingBusy());
+}
+
+function drawFishMiniBlob(px,py,fill){
+  ctx.save();ctx.translate(px,py);
+  ctx.fillStyle=fill;
+  ctx.beginPath();ctx.ellipse(1,3,13,10,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.moveTo(-12,6);ctx.lineTo(-26,12);ctx.lineTo(-28,26);ctx.lineTo(-14,34);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#1a4060';ctx.fillRect(10,0,4,7);
+  ctx.restore();
+}
+
+function drawProceduralFishCard(cx,cy,s){
+  ctx.save(); ctx.translate(cx,cy); ctx.scale(s,s);
+  ctx.fillStyle='#5898cc';
+  ctx.beginPath(); ctx.ellipse(-6,8,58,26,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#d0eafc';
+  ctx.beginPath(); ctx.ellipse(-20,26,42,13,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#4080b8';
+  ctx.beginPath();
+  ctx.moveTo(-74,42); ctx.quadraticCurveTo(-112,-54,-154,36);
+  ctx.quadraticCurveTo(-96,156,-58,132); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#3a6890'; ctx.strokeStyle='#2a5480'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(52,4,32,Math.PI*-0.05,Math.PI*1.05); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#0a2840'; ctx.beginPath(); ctx.arc(62,-14,10,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#eaf6ff'; ctx.fillRect(64,-26,14,22);
+  ctx.fillStyle='#bcd8ee';
+  ctx.beginPath(); ctx.moveTo(-4,62); ctx.quadraticCurveTo(24,118,112,114);
+  ctx.quadraticCurveTo(48,154,-28,146); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+/** Draw PNG for species sized to box (minigame + result card). Fallback: procedural card or tinted blob via onFallback(idx). */
+function drawFishCatchSpriteSized(cx,cy,maxW,maxH,speciesIdx,onFallback){
+  const idx=fishClamp(speciesIdx|0,0,FISH_CATCH_IMGS.length-1);
+  const img=FISH_CATCH_IMGS[idx];
+  ctx.imageSmoothingEnabled=false;
+  if(img&&img.complete&&img.naturalWidth>0){
+    const nw=img.naturalWidth, nh=img.naturalHeight;
+    const sc=Math.min(maxW/nw,maxH/nh);
+    const dw=Math.round(nw*sc), dh=Math.round(nh*sc);
+    ctx.drawImage(img,0,0,nw,nh,Math.round(cx-dw/2),Math.round(cy-dh/2),dw,dh);
+    return true;
+  }
+  if(typeof onFallback==='function')onFallback(idx);
+  else drawFishMiniBlob(cx,cy,FISH_CATCH_SPECIES[idx].blob);
+  return false;
+}
+
+function drawCaughtFishIllustration(cx,cy,maxW,maxH){
+  drawFishCatchSpriteSized(cx,cy,maxW,maxH,G.fishing.catchSpeciesIdx,function(){
+    drawProceduralFishCard(cx,cy+8,Math.max(0.5,maxW/168));
+  });
+}
+
+function drawFishBarFace(cx,cy,speciesIdx){
+  drawFishCatchSpriteSized(cx,cy,FISH_BAR_W-4,FISH_BAR_W+18,speciesIdx,function(i){
+    drawFishMiniBlob(cx,cy,FISH_CATCH_SPECIES[i].blob);
+  });
+}
+
+/** Kobe battle–style picker (keyboard + touch D‑pad ↑↓, A / SPACE confirms). */
+function fishResultMenuLayout(){
+  const mw=194, mh=118, myBase=H-172+50+6;
+  const mob=document.body.classList.contains('mobile-ui');
+  return mob? {mx:W-mw-12, my:myBase, mw, mh} : {mx:12, my:myBase, mw, mh};
+}
+
+function drawFishResultMenu(){
+  const {mx,my,mw,mh}=fishResultMenuLayout();
+  const clipY=my+28, clipH=mh-34;
+  r(mx-3,my-3,mw+6,mh+6,C.uiB); r(mx,my,mw,mh,C.uiBg);
+  ctx.strokeStyle=C.uiB2; ctx.lineWidth=2; ctx.strokeRect(mx+4,my+4,mw-8,mh-8);
+  ctx.fillStyle=C.white; ctx.font='bold 11px monospace';
+  ctx.fillText('Caught: '+ (G.fishing.caughtName||'?'), mx+12, my+20);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(mx+4, clipY, mw-8, clipH); ctx.clip();
+  const sel=(G.fishing.fishResultPick|0)%2;
+  let yy=clipY+12;
+  const LH=16;
+  ctx.font='bold 11px monospace';
+  ctx.fillStyle=sel===0?'#fff8c8':'rgba(200,190,160,0.65)';
+  ctx.fillText((sel===0?'\u25ba ':'  ')+'THROW BACK \u2014 let it swim free', mx+10, yy); yy+=LH;
+  ctx.fillStyle=sel===1?'#fff8c8':'rgba(200,190,160,0.65)';
+  ctx.fillText((sel===1?'\u25ba ':'  ')+'FEED KOBE \u2014 paws up! \uD83D\uDC3E', mx+10, yy); yy+=LH;
+  yy+=4;
+  ctx.fillStyle='rgba(120,110,90,0.4)';
+  ctx.fillRect(mx+8, yy, mw-16, 1); yy+=7;
+  ctx.fillStyle='rgba(180,160,120,0.75)'; ctx.font='9px monospace';
+  const mob=document.body.classList.contains('mobile-ui');
+  ctx.fillText(mob?'\u2191\u2193 D-pad  \xB7  A confirms':'\u2191\u2193 choose   SPACE/ENTER / A', mx+10, yy);
+  ctx.restore();
+}
+
+function fishBarTopPx(){return Math.floor(H*0.5-FISH_BAR_H*0.5);}
+
+/** Pointer / finger on scaled canvas — lifts catch bar like SPACE (helps phones). */
+(function fishBarCanvasPointer(){
+  const c=document.getElementById('c');
+  if(!c||c._fishBarPtrBound)return;
+  c._fishBarPtrBound=true;
+  let grabPid=null;
+  function clientToGame(clientX,clientY){
+    const r=c.getBoundingClientRect(), rw=Math.max(r.width,1), rh=Math.max(r.height,1);
+    return { x:(clientX-r.left)/rw*W, y:(clientY-r.top)/rh*H };
+  }
+  function barHit(gp){
+    if(G.mode!=='EXPLORE'||!G.fishing||G.fishing.phase!=='MINIGAME')return false;
+    const bx=W-FISH_BAR_W-16, tb=fishBarTopPx(), pad=38;
+    return gp.x>=bx-pad&&gp.x<=bx+FISH_BAR_W+pad&&gp.y>=tb-pad&&gp.y<=tb+FISH_BAR_H+pad;
+  }
+  function release(pev){
+    if(grabPid==null)return;
+    if(pev&&typeof pev.pointerId==='number'&&pev.pointerId!==grabPid)return;
+    grabPid=null; G.touchFishBarHold=false;
+  }
+  c.addEventListener('pointerdown',ev=>{
+    if(G.mode!=='EXPLORE'||!G.fishing||G.fishing.phase!=='MINIGAME')return;
+    const g=clientToGame(ev.clientX,ev.clientY);
+    if(!barHit(g))return;
+    ev.preventDefault();
+    G.touchFishBarHold=true; grabPid=ev.pointerId;
+    try{ c.setPointerCapture(ev.pointerId); }catch(_){}
+  },{passive:false});
+  c.addEventListener('pointerup',release);
+  c.addEventListener('pointercancel',release);
+  c.addEventListener('lostpointercapture',release);
+})();
+
+function fishingUpdate(dt){
+  const F=G.fishing; if(F.phase==='IDLE')return;
+  const k=Math.min(dt*60,2.5);
+  const top=fishBarTopPx();
+  if(F.phase==='CASTING'){
+    F.castT+=dt;
+    if(F.castT>0.2&&!F._spl){ F._spl=true; sfxFishSplash();
+      F.ripples=[{r:6,age:0},{r:16,age:0.02},{r:26,age:0.04},{r:36,age:0.06}];}
+    for(let i=F.ripples.length-1;i>=0;i--){ F.ripples[i].age+=dt;
+      if(F.ripples[i].age>0.55)F.ripples.splice(i,1); }
+    if(F.castT>=1){
+      F.catchSpeciesIdx=Math.floor(Math.random()*FISH_CATCH_SPECIES.length);
+      const zh=fishActiveSpecies().zoneH;
+      const zMin=top+zh/2, zMax=top+FISH_BAR_H-zh/2;
+      const mid=(zMin+zMax)*0.5;
+      F.phase='MINIGAME'; F.catchCy=mid; F.catchVy=0; F.fishCy=mid; F.fishVy=0;
+      F.fishPhase=Math.random()*Math.PI*2; F.nextDartAt=0.88+Math.random()*0.55;
+      F.dartVel=0; F.meter=0.12; F.gameT=0; F.fishBarHoldPrev=false;
+    }
+    return;
+  }
+  if(F.phase==='MINIGAME'){
+    F.gameT+=dt;
+    const sp=fishActiveSpecies(), zh=sp.zoneH;
+    const zMin=top+zh/2, zMax=top+FISH_BAR_H-zh/2;
+    const hold=!!G.keys[' ']||!!G.touchFishBarHold;
+    const prev=!!F.fishBarHoldPrev;
+    const pressed=!prev&&hold;
+    const released=prev&&!hold;
+    F.fishBarHoldPrev=hold;
+    const nudge=fishClamp(Math.min(7, zh*0.14), 3.5, 9);
+    if(pressed){ F.catchCy=fishClamp(F.catchCy-nudge,zMin,zMax); F.catchVy-=4.55; }
+    else if(released) F.catchVy+=2.85;
+    F.catchVy+=(hold?-0.62:0.44)*Math.min(k,2);
+    F.catchVy*=Math.pow(0.994,k);
+    F.catchCy=fishClamp(F.catchCy+F.catchVy,zMin,zMax);
+    const target=top+FISH_BAR_H*(0.5+
+      sp.ampMain*Math.sin(F.gameT*sp.speedMain+F.fishPhase)+
+      sp.ampSub*Math.sin(F.gameT*sp.speedSub+F.fishPhase*0.71)+
+      sp.wobble*Math.sin(F.gameT*(1.02+0.48*Math.sin(F.gameT*0.38))));
+    F.nextDartAt-=dt;
+    if(F.nextDartAt<=0){ F.nextDartAt=0.7+Math.random()*0.88; F.dartVel+=(Math.random()*2-1)*3.15*sp.dartMul; }
+    F.dartVel*=Math.pow(0.9,k);
+    F.fishVy+=(target-F.fishCy)*sp.chase*dt; F.fishVy+=F.dartVel*dt*sp.dartBoost; F.fishVy*=Math.pow(sp.friction,k);
+    F.fishCy+=F.fishVy; F.fishCy=fishClamp(F.fishCy,top+10,top+FISH_BAR_H-10);
+    const overlap=Math.abs(F.fishCy-F.catchCy)<(zh/2+5);
+    if(overlap)F.meter+=sp.meterGain*dt; else F.meter-=sp.meterLose*dt; F.meter=fishClamp(F.meter,0,1);
+    if(F.meter>=1){ F.phase='RESULT'; F.caughtName=fishActiveSpecies().name; F.fishResultPick=0;
+      sfxCatchJingle(); }
+    else if(F.gameT>=20){ F.phase='ESCAPED'; F.escT=0;}
+    return;
+  }
+  if(F.phase==='ESCAPED'){ F.escT+=dt; if(F.escT>=2.2)fishingResetQuiet(); return; }
+  if(F.phase==='RESULT') return;
+  if(F.phase==='KOBE_FEED'){
+    F.feedT+=dt;
+    const ks=G.kx-G.camX, kk=G.ky-G.camY, tx=ks+21, ty=kk+13;
+    if(F.feedSub==='slide'){
+      const sm=fishClamp(F.feedT/0.74,0,1); const e=sm*sm*(3-2*sm);
+      F.fishFx=W*0.5+(tx-W*0.5)*e; F.fishFy=H*0.46+(ty-H*0.46)*e;
+      if(sm>=1&&!F.gulpDone){ F.gulpDone=true; sfxGulpFish(); F.feedSub='celebrate'; F.feedT=0; G.kobeFed=true; }
+    }else{
+      if(F.feedT>2.05)fishingResetQuiet();
+    }
+  }
+}
+
+function drawFishingOverlays(msx,msy){
+  const F=G.fishing, p=F.phase;
+  if(p==='CASTING'){
+    ctx.strokeStyle='rgba(118,154,172,0.95)'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(F.castFromSx,F.castFromSy);
+    const u=fishClamp(F.castT,0,1);
+    const lx=F.castFromSx+(F.castToSx-F.castFromSx)*fishClamp(u*1.06,0,1);
+    const ly=F.castFromSy+(F.castToSy-F.castFromSy)*fishClamp(u*1.06,0,1);
+    const tcx=(F.castFromSx+F.castToSx)*0.5+55*(1-u), tcy=(F.castFromSy+F.castToSy)*0.5-38*u;
+    ctx.quadraticCurveTo(tcx,tcy,lx,ly); ctx.stroke();
+    for(let z=0;z<F.ripples.length;z++){
+      const rp=F.ripples[z], ag=rp.age||0;
+      ctx.strokeStyle=`rgba(148,218,254,${Math.max(0,0.48-ag*1.18)})`; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(F.bx,F.by,rp.r+ag*68,0,Math.PI*2); ctx.stroke();
+    }
+    ctx.strokeStyle='#8ad0f0'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(F.bx,F.by,Math.max(8,(F.castT-0.2)*140),0,Math.PI*2); ctx.stroke();
+  }
+  if(p==='MINIGAME'){
+    ctx.fillStyle='rgba(8,12,34,0.42)'; ctx.fillRect(0,0,W,H-72);
+    const bx=W-FISH_BAR_W-16, tb=fishBarTopPx(), zH=fishActiveSpecies().zoneH;
+    r(bx-3,tb-3,FISH_BAR_W+6,FISH_BAR_H+6,'#182648');
+    ctx.strokeStyle='#4a8098'; ctx.lineWidth=2; ctx.strokeRect(bx,tb,FISH_BAR_W,FISH_BAR_H);
+    ctx.fillStyle='rgba(48,208,138,0.36)'; ctx.fillRect(bx,F.catchCy-zH/2,FISH_BAR_W,zH);
+    ctx.strokeStyle='rgba(170,246,148,0.85)'; ctx.strokeRect(bx+0.5,F.catchCy-zH/2+0.5,FISH_BAR_W-1,zH-1);
+    drawFishBarFace(bx+FISH_BAR_W*0.5,F.fishCy,F.catchSpeciesIdx);
+    const mobFish=document.body.classList.contains('mobile-ui');
+    if(mobFish){
+      ctx.save();
+      ctx.strokeStyle='rgba(255,248,220,0.22)'; ctx.lineWidth=1; ctx.setLineDash([5,8]);
+      const padH=42;
+      ctx.strokeRect(Math.floor(bx-padH),Math.floor(tb-10),Math.floor(FISH_BAR_W+padH*2),Math.floor(FISH_BAR_H+20));
+      ctx.setLineDash([]); ctx.restore();
+    }
+    const mw=188, mh=13, ox=(W-mw)*0.5, oy=tb+FISH_BAR_H+18;
+    r(ox,oy,mw,mh,'#141c38'); ctx.fillStyle='rgba(28,154,226,0.55)'; ctx.fillRect(ox+3,oy+3,(mw-6)*F.meter,mh-6);
+    ctx.strokeStyle='#5ab8d8'; ctx.strokeRect(ox+2,oy+2,mw-4,mh-4);
+    ctx.fillStyle='#e8eef6'; ctx.font='bold 10px monospace'; ctx.textAlign='center';
+    ctx.fillText('Catch',ox+mw*0.5,oy-mh+2);
+    ctx.fillStyle='rgba(200,226,246,0.88)';
+    const mobUi=document.body.classList.contains('mobile-ui');
+    ctx.fillText(mobUi?'Finger on GREEN bar OR hold A':'SPACE or HOLD A — or CLICK / tap the GREEN bar',
+      W*0.5, oy+mh+38);
+    if(mobUi){
+      ctx.fillStyle='rgba(180,206,226,0.72)'; ctx.font='9px monospace';
+      ctx.fillText('Raise the catch zone toward the fish', W*0.5, oy+mh+53);
+      ctx.font='bold 10px monospace';
+    }
+    ctx.textAlign='left';
+  }
+  if(p==='RESULT'){
+    r(W/2-118,H/2-92,236,174,'rgba(16,26,54,0.94)');
+    ctx.strokeStyle='#6a99c8'; ctx.lineWidth=2; ctx.strokeRect(W/2-118,H/2-92,236,174);
+    drawCaughtFishIllustration(W/2,H/2-28,216,132);
+    drawFishResultMenu();
+  }
+  if(p==='ESCAPED'){
+    r(W/2-132,H/2-44,264,92,'rgba(12,22,54,0.88)');
+    ctx.strokeStyle='#5a8898'; ctx.strokeRect(W/2-132,H/2-44,264,92);
+    ctx.fillStyle='#e8dcb8'; ctx.font='bold 13px monospace'; ctx.textAlign='center';
+    ctx.fillText('The fish got away.',W/2,H/2-6);
+    ctx.fillStyle='#a09890'; ctx.font='11px monospace';
+    ctx.fillText('Better luck next cast.',W/2,H/2+20); ctx.textAlign='left';
+  }
+  if(p==='KOBE_FEED'){
+    if(G.fishing.feedSub==='slide'&&G.fishing.fishFx!=null){
+      drawCaughtFishIllustration(G.fishing.fishFx,G.fishing.fishFy,92,54);
+      ctx.strokeStyle='rgba(120,208,148,0.22)'; ctx.lineWidth=5; ctx.globalAlpha=0.45;
+      ctx.beginPath(); ctx.moveTo(msx+12,G.my-G.camY+8); ctx.lineTo(G.fishing.fishFx,G.fishing.fishFy); ctx.stroke();
+      ctx.globalAlpha=1;
+    }
+    if(G.fishing.feedSub==='celebrate'){
+      const ks=G.kx-G.camX, kk=G.ky-G.camY;
+      drawKobeFishCelebrateHearts(ks,kk,G.fishing.feedT,G.tick);
+      drawWoof(Math.floor(ks+6),Math.floor(kk),'WOOF!');
+    }
+  }
+  if(p==='IDLE'&&mayCanFishHere()){
+    const bx=msx+Math.sin(G.tick*0.07)*4;
+    ctx.font='bold 16px monospace';
+    ctx.fillStyle='rgba(250,246,238,0.96)';
+    ctx.fillText('\uD83C\uDFA3', bx, msy-30);
+    ctx.font='bold 10px monospace';
+    ctx.fillStyle='rgba(200,226,246,0.78)';
+    ctx.fillText('[F]', bx+24, msy-22);
+  }
+}
+
 // ============================================================
 // 10. STATE MACHINE & GAME LOOP
 // ============================================================
 function getInput(){
-  let dx=0,dy=0;
+  let dx=0, dy=0;
   if(G.keys['ArrowLeft']||G.keys['a'])dx-=1;
   if(G.keys['ArrowRight']||G.keys['d'])dx+=1;
   if(G.keys['ArrowUp']||G.keys['w'])dy-=1;
@@ -6428,15 +6939,39 @@ function loop(ts){
 
   // ── EXPLORE (exterior map) ──
   else if(G.mode==='EXPLORE'){
-    moveExt(dx,dy,dt);
-    G.hist.push({x:G.mx,y:G.my});
-    if(G.hist.length>HIST_LEN)G.hist.shift();
-    const hi=Math.max(0,G.hist.length-1-DOG_DELAY);
-    G.kx=G.hist[hi].x-6; G.ky=G.hist[hi].y+6;
+    syncTouchRodVisibility();
+    fishingUpdate(dt);
+    const fBusy=fishingBusy();
+    // Post-catch: same UX as battle move menu (↑/↓ touch or keys, SPACE/ENTER/A confirm)
+    if(G.fishing.phase==='RESULT'){
+      if(G.upBtn){ G.upBtn=false; G.fishing.fishResultPick=(G.fishing.fishResultPick+2-1)%2; }
+      if(G.downBtn){ G.downBtn=false; G.fishing.fishResultPick=(G.fishing.fishResultPick+1)%2; }
+      if(G.aBtn){
+        G.aBtn=false;
+        if(!(G.fishing.fishResultPick|0)){
+          fishingResetQuiet();
+        }else{
+          const Fv=G.fishing;
+          Fv.phase='KOBE_FEED'; Fv.feedSub='slide'; Fv.feedT=0; Fv.gulpDone=false;
+          Fv.fishFx=W*0.52; Fv.fishFy=H*0.42;
+        }
+      }
+    }
+    if(!fBusy){
+      moveExt(dx,dy,dt);
+      G.hist.push({x:G.mx,y:G.my});
+      if(G.hist.length>HIST_LEN)G.hist.shift();
+      const hi=Math.max(0,G.hist.length-1-DOG_DELAY);
+      G.kx=G.hist[hi].x-6; G.ky=G.hist[hi].y+6;
+    }
     updateCamera();
     G.cooldown=Math.max(0,G.cooldown-dt);
+    if(G.fishCastBtn){
+      if(!fBusy&&mayCanFishHere())startFishingCast();
+      G.fishCastBtn=false;
+    }
     let onDoorPrompt=false,onNpcPrompt=false,taxiMsg='';
-    if(G.cooldown<=0){
+    if(G.cooldown<=0&&!fBusy){
       const hit=checkExtSpecial(G.aBtn);
       if(hit){
         const consume=hit.type==='indoor'||hit.type==='npc';
@@ -6475,20 +7010,25 @@ function loop(ts){
           }
         }
       }
-    } else {
+    } else if(!fBusy){
       const peek=checkExtSpecial(false);
       if(peek&&peek.type==='door_prompt') onDoorPrompt=true;
     }
     drawExtMap();
     drawExtNPCs();
     const ks=G.kx-G.camX, ky2=G.ky-G.camY;
-    drawKobe(ks,ky2,G.tick,G.facing);
+    let kDrawY=ky2, kTk=G.tick;
+    if(G.fishing.phase==='KOBE_FEED'&&G.fishing.feedSub==='celebrate'){
+      kDrawY-=Math.abs(Math.sin(G.fishing.feedT*14))*12;
+      kTk=G.tick*3;
+    }
+    drawKobe(ks,kDrawY,kTk,G.facing);
     const msx=G.mx-G.camX, msy=G.my-G.camY;
     drawMay(msx,msy,G.tick,G.facing||'down');
     // Name tag above May
     npcNameTag(msx+2,msy,'May','#f8e8d8');
     // Name tag above Kobe
-    npcNameTag(ks+2,ky2,'Kobe','#d8c8a0');
+    npcNameTag(ks+2,kDrawY,'Kobe','#d8c8a0');
     drawHUD();
     // Farewell indicator
     if(G.hasBoarding&&!G.farewellDone){
@@ -6500,8 +7040,8 @@ function loop(ts){
         ctx.fillText('Grandma — talk inside home \u2665',hsx+8,hsy+10+po);ctx.textAlign='left';
       }
     }
-    // Prompts
-    if(onDoorPrompt||onNpcPrompt){
+    // Prompts (hidden during fishing overlays)
+    if(!fBusy&&(onDoorPrompt||onNpcPrompt)){
       r(msx-36,msy-26,96,16,'rgba(0,0,0,0.8)');
       ctx.fillStyle='#a8e870';ctx.font='bold 10px monospace';
       ctx.fillText(onNpcPrompt?'ENTER: Talk':'ENTER: Enter',msx-32,msy-13);
@@ -6511,7 +7051,7 @@ function loop(ts){
       ctx.fillStyle='#f0c860';ctx.font='bold 11px monospace';ctx.textAlign='center';
       ctx.fillText(taxiMsg,W/2,H-30);ctx.textAlign='left';
     }
-    if(G.tick<500){
+    if(G.tick<500&&!fBusy){
       r(0,H-22,W,22,'rgba(0,0,0,0.5)');
       ctx.fillStyle='rgba(200,190,160,0.8)';ctx.font='11px monospace';ctx.textAlign='center';
       const hint=document.body.classList.contains('mobile-ui')
@@ -6520,6 +7060,7 @@ function loop(ts){
       ctx.fillText(hint,W/2,H-7);
       ctx.textAlign='left';
     }
+    drawFishingOverlays(msx,msy);
   }
 
   // ── BATTLE ──
@@ -7036,6 +7577,8 @@ function loop(ts){
       G.hist.length=0;for(let i=0;i<HIST_LEN;i++)G.hist.push({x:G.mx,y:G.my});
       G.caveHist.length=0;for(let i=0;i<HIST_LEN;i++)G.caveHist.push({x:G.caveX,y:G.caveY});
       G.visitedHouse=false;G.visitedCafe=false;G.introLine=0;G.tick=0;G.cabFwLine=0;
+      G.kobeFed=false;
+      fishingResetQuiet();
     }
   }
 
@@ -7051,7 +7594,8 @@ function loop(ts){
   var imgs=[
     DIALOG_MAY_PORTRAIT,DIALOG_KOBE_PORTRAIT,DIALOG_GRANDMA_PORTRAIT,
     DIALOG_GARY_PORTRAIT,DIALOG_SARDONNA_PORTRAIT,DIALOG_WING_PORTRAIT,
-    DIALOG_DAD_PORTRAIT,DIALOG_JO_PORTRAIT,CHARLIE_IMG
+    DIALOG_DAD_PORTRAIT,DIALOG_JO_PORTRAIT,CHARLIE_IMG,
+    ...FISH_CATCH_IMGS,
   ];
   var loaded=0,started=false;
   function start(){if(started)return;started=true;requestAnimationFrame(function(ts){lastT=ts;requestAnimationFrame(loop);});}
