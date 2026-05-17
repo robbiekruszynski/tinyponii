@@ -1303,14 +1303,22 @@ function _loadPortrait(localSrc, repoFile){
 }
 const DIALOG_GRANDMA_PORTRAIT=_loadPortrait('assets/grandmapreview.png','grandmapreview.png');
 const DIALOG_GARY_PORTRAIT   =_loadPortrait('assets/gary.png',   'gary.png');
-const DIALOG_MAY_PORTRAIT    =_loadPortrait('assets/may.png',    'may.png');
 const DIALOG_WING_PORTRAIT   =_loadPortrait('assets/wing.png',   'wing.png');
 const DIALOG_SARDONNA_PORTRAIT=_loadPortrait('assets/sadonna.png','sadonna.png');
 const DIALOG_KOBE_PORTRAIT   =_loadPortrait('assets/kobe.png',   'kobe.png');
 const DIALOG_DAD_PORTRAIT    =_loadPortrait('assets/dad.png',    'dad.png');
 const DIALOG_JO_PORTRAIT     =_loadPortrait('assets/jo.png',     'jo.png');
+/** May — dialog portrait only (world uses directional sprites below). */
+const DIALOG_MAY_PORTRAIT    =_loadPortrait('assets/may.png',    'may.png');
 /** Jo's dog — dialog portrait + world sprite */
 const CHARLIE_IMG=_loadPortrait('assets/charlie.png','charlie.png');
+/** May — directional map sprites (fallback to procedural if unloaded). */
+const MAY_SPR_FRONT=_loadPortrait('assets/may_front.png','may_front.png');
+const MAY_SPR_BACK=_loadPortrait('assets/may_back.png','may_back.png');
+const MAY_SPR_LEFT=_loadPortrait('assets/may_left.png','may_left.png');
+const MAY_SPR_RIGHT=_loadPortrait('assets/may_right.png','may_right.png');
+/** Canvas height for May sprites (~matches legacy procedural footprint). */
+const MAY_SPR_DRAW_H=40;
 /** Fish catch illustrations (order matches FISH_CATCH_SPECIES: easy→hard) */
 const FISH_CATCH_IMGS=[
   _loadPortrait('assets/mayfish.png','mayfish.png'),
@@ -1544,7 +1552,30 @@ function canStepInd(x,y){
 // ============================================================
 function r(x,y,w,h,col){ctx.fillStyle=col;ctx.fillRect(Math.floor(x),Math.floor(y),w,h);}
 
-function drawMay(ox,oy,tick=0,facing='down',omitFootShadow=false){
+function maySpriteForFacing(facing){
+  if(facing==='up')return MAY_SPR_BACK;
+  if(facing==='down')return MAY_SPR_FRONT;
+  if(facing==='left')return MAY_SPR_LEFT;
+  return MAY_SPR_RIGHT;
+}
+
+function tryDrawMaySprites(ox,oy,_tick,facing,_omitFootShadow){
+  const img=maySpriteForFacing(facing);
+  if(!img||!img.complete||img.naturalWidth<=0)return false;
+  const x=Math.floor(ox),y=Math.floor(oy);
+  const nw=img.naturalWidth,nh=img.naturalHeight;
+  const dh=MAY_SPR_DRAW_H;
+  const dw=Math.round(nw*dh/nh);
+  const bx=x+11-Math.floor(dw/2);
+  const by=y+31-dh;
+  const prevSmooth=ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(img,0,0,nw,nh,bx,by,dw,dh);
+  ctx.imageSmoothingEnabled=prevSmooth;
+  return true;
+}
+
+function drawMayProcedural(ox,oy,tick=0,facing='down',_omitFootShadow=false){
   const x=Math.floor(ox),y=Math.floor(oy);
   const bob=Math.floor(tick/10)%2; // walk bob
   const SK='#d4b06a';   // warm Asian skin
@@ -1556,9 +1587,6 @@ function drawMay(ox,oy,tick=0,facing='down',omitFootShadow=false){
   const SH='#0e0c14';   // shoes
   const SG='#1a1a1a';   // sunglasses lens (very dark)
   const SGL='rgba(80,60,120,0.4)'; // lens glint
-
-  if(!omitFootShadow)
-    r(x+2,y+30,20,3,'rgba(0,0,0,0.18)'); // shadow
 
   if(facing==='down'){
     // FRONT VIEW — facing player, sunglasses visible, earmuffs on sides
@@ -1674,6 +1702,11 @@ function drawMay(ox,oy,tick=0,facing='down',omitFootShadow=false){
     r(x+8,y+10,6,2,SK);
     r(x+10,y+12,4,1,'#a06850');
   }
+}
+
+function drawMay(ox,oy,tick=0,facing='down',omitFootShadow=false,useDirSprites=false){
+  if(useDirSprites&&tryDrawMaySprites(ox,oy,tick,facing,omitFootShadow))return;
+  drawMayProcedural(ox,oy,tick,facing,omitFootShadow);
 }
 
 function drawKobe(ox,oy,tick=0,facing='right'){
@@ -4077,7 +4110,7 @@ function drawHouseInterior(indX,indY,tick,farewellActive,fwLine,fwGX,fwGY,fwFX,f
   const miy=Math.min(Math.max(indY,RY+20),RY+RH-30);
   const mix=Math.min(Math.max(indX,RX+10),RX+RW-30);
   const joDogPlay=isJo&&(G.joDogPlayT||0)>0;
-  drawMay(mix,miy,tick,G.facing||'down');
+  drawMay(mix,miy,tick,G.facing||'down',false,true);
   if(!joDogPlay)
     drawKobe(mix-26,miy+4,tick,G.facing);
   npcLabel(mix,miy,'May','#f8e8d8');
@@ -4477,7 +4510,7 @@ function drawMayAptInterior(indX,indY,tick){
 
   const mix=Math.min(Math.max(indX,RX+16),RX+RW-48);
   const miy=Math.min(Math.max(indY,RY+22),RY+RH-30);
-  drawMay(mix,miy,tick,G.facing||'down');
+  drawMay(mix,miy,tick,G.facing||'down',false,true);
   drawKobe(mix-26,miy+4,tick,G.facing);
   npcNameTag(mix+2,miy,'May','#f8e8d8');
   npcNameTag(mix-24,miy+4,'Kobe','#d8c8a0');
@@ -4607,7 +4640,7 @@ function drawCafeInterior(indX,indY,tick){
   const mix=Math.min(Math.max(indX,RX+14),RX+RW-30);
 
   // May (stationary, clamped)
-  drawMay(mix,miy,tick,G.facing||'down',true);
+  drawMay(mix,miy,tick,G.facing||'down',true,true);
   cafeLabel(mix,miy,'May');
 
   // Kobe roams freely around the café at Charlie-play speed
@@ -4741,7 +4774,7 @@ function drawDialogPortrait(nl, px, py, pw, ph){
   ctx.scale(sc,sc);
   ctx.translate(-12,-28);
   var t=G?G.tick:0;
-  if(nl==='may')                      drawMay(0,0,t,'down');
+  if(nl==='may')                      drawMay(0,0,t,'down',false,true);
   else if(nl==='kobe')                drawKobe(0,0,t,'right');
   else if(nl==='grandma')             drawGrandma(0,0);
   else if(nl==='gary')                drawGary(0,0);
@@ -5362,7 +5395,7 @@ function drawBattle(){
   const homeX=kLead?52:22;
 
   if(kLead){
-    ctx.save();ctx.translate(4,H-208);ctx.scale(1.15,1.15);drawMay(0,0,fr,'right');ctx.restore();
+    ctx.save();ctx.translate(4,H-208);ctx.scale(1.15,1.15);drawMay(0,0,fr,'right',false,true);ctx.restore();
     if(kobePhase===0||kobePhase===3){
       ctx.save();ctx.translate(homeX,H-236);ctx.scale(2.05,2.05);drawKobe(0,0,fr);ctx.restore();
     } else {
@@ -5387,7 +5420,7 @@ function drawBattle(){
       }
     }
   } else {
-    ctx.save();ctx.translate(60,H-230);ctx.scale(2,2);drawMay(0,0,fr,'down');ctx.restore();
+    ctx.save();ctx.translate(60,H-230);ctx.scale(2,2);drawMay(0,0,fr,'down',false,true);ctx.restore();
     if(kobePhase===0||kobePhase===3){
       ctx.save();ctx.translate(22,H-176);ctx.scale(1.6,1.6);drawKobe(0,0,fr);ctx.restore();
     } else {
@@ -5465,7 +5498,7 @@ function drawBattle(){
     if(kLead){
       ctx.save();ctx.translate(homeX+shake,H-236);ctx.scale(2.05,2.05);drawKobe(0,0,G.tick);ctx.restore();
     } else {
-      ctx.save();ctx.translate(60+shake,H-230);ctx.scale(2,2);drawMay(0,0,G.tick,'down');ctx.restore();
+      ctx.save();ctx.translate(60+shake,H-230);ctx.scale(2,2);drawMay(0,0,G.tick,'down',false,true);ctx.restore();
     }
     ctx.restore();
   }
@@ -5507,7 +5540,7 @@ function drawIntroBedroom(){
 
   const mx=RX+208, my=RY+94;
   const kx=RX+168, ky=RY+98;
-  ctx.save();ctx.translate(mx,my);ctx.scale(2,2);drawMay(0,0,G.tick,'down');ctx.restore();
+  ctx.save();ctx.translate(mx,my);ctx.scale(2,2);drawMay(0,0,G.tick,'down',false,true);ctx.restore();
   ctx.save();ctx.translate(kx,ky);ctx.scale(1.5,1.5);drawKobe(0,0,G.tick);ctx.restore();
 
   // Same vista layer as apartment re-entry — painted last so nothing dims the pane in intro
@@ -5569,7 +5602,7 @@ function drawCabFarewellScene(){
 
   const mx=732, my=landY;
   const msx=mx-G.camX, msy=my-G.camY;
-  drawMay(msx,msy,G.tick,'right');
+  drawMay(msx,msy,G.tick,'right',false,true);
   npcNameTag(msx+2,msy+14,'May','#f8e8d8');
 
   drawSardonnaWorld(774, landY, G.tick);
@@ -5776,7 +5809,7 @@ function drawAirport(){
 
   ctx.save();ctx.translate(W-150,H-230);ctx.scale(1.4,1.4);drawGateAgent(0,0);ctx.restore();
 
-  ctx.save();ctx.translate(100,H-220);ctx.scale(2,2);drawMay(0,0,G.tick,'down');ctx.restore();
+  ctx.save();ctx.translate(100,H-220);ctx.scale(2,2);drawMay(0,0,G.tick,'down',false,true);ctx.restore();
   if(!G.kobeBoltActive){
     ctx.save();ctx.translate(148,H-188);ctx.scale(1.6,1.6);drawKobe(0,0,G.tick);ctx.restore();
   } else {
@@ -6369,7 +6402,7 @@ function drawCredits(){
   // Place May and Kobe on the sand (sandTop = shoreY+10 = H*0.70+10)
   const sandStandY=Math.floor(H*0.70)+10;
   // May: scale 3 → sprite ~36px tall, so feet at sandStandY means translateY = sandStandY - 36
-  ctx.save();ctx.translate(W/2-100,sandStandY-36);ctx.scale(3,3);drawMay(0,0,G.tick,'down');ctx.restore();
+  ctx.save();ctx.translate(W/2-100,sandStandY-36);ctx.scale(3,3);drawMay(0,0,G.tick,'down',false,true);ctx.restore();
   // Kobe: scale 2 → sprite ~24px tall
   ctx.save();ctx.translate(W/2+60,sandStandY-24);ctx.scale(2,2);drawKobe(0,0,G.tick);ctx.restore();
 
@@ -6403,7 +6436,7 @@ function drawTitle(){
   ctx.fillText('MAY & KOBE: HONG KONG',W/2,H/2-83);
   ctx.fillStyle='rgba(200,180,130,0.8)';ctx.font='13px monospace';
   ctx.fillText('A tiny moving story',W/2,H/2-54);
-  ctx.save();ctx.translate(W/2-80,H/2-40);ctx.scale(2.5,2.5);drawMay(0,0,G.tick,'down');ctx.restore();
+  ctx.save();ctx.translate(W/2-80,H/2-40);ctx.scale(2.5,2.5);drawMay(0,0,G.tick,'down',false,true);ctx.restore();
   ctx.save();ctx.translate(W/2+28,H/2+20);ctx.scale(1.8,1.8);drawKobe(0,0,G.tick);ctx.restore();
   ctx.fillStyle='rgba(180,170,140,0.7)';ctx.font='12px monospace';
   ctx.fillText('WASD / Arrows \u2014 Move',W/2,H/2+110);
@@ -7050,7 +7083,7 @@ function loop(ts){
     }
     drawKobe(ks,kDrawY,kTk,G.facing);
     const msx=G.mx-G.camX, msy=G.my-G.camY;
-    drawMay(msx,msy,G.tick,G.facing||'down');
+    drawMay(msx,msy,G.tick,G.facing||'down',false,true);
     // Name tag above May
     npcNameTag(msx+2,msy,'May','#f8e8d8');
     // Name tag above Kobe
@@ -7218,7 +7251,7 @@ function loop(ts){
     drawExtMap();drawExtNPCs();
     const ks2=G.kx-G.camX,ky3=G.ky-G.camY;
     drawKobe(ks2,ky3,G.tick,G.facing);
-    drawMay(G.mx-G.camX,G.my-G.camY,G.tick,G.facing||'down');
+    drawMay(G.mx-G.camX,G.my-G.camY,G.tick,G.facing||'down',false,true);
     npcNameTag(G.mx-G.camX+2,G.my-G.camY,'May','#f8e8d8');
     npcNameTag(ks2+2,ky3,'Kobe','#d8c8a0');
     drawHUD();
@@ -7422,7 +7455,7 @@ function loop(ts){
     drawCaveMap();
     // Draw Kobe + May offset by cave draw offset
     drawKobe(G.caveKX,G.caveKY+CAVE_DRAW_OFFSET_Y,G.tick,G.facing||'down');
-    drawMay(G.caveX,G.caveY+CAVE_DRAW_OFFSET_Y,G.tick,G.facing||'down');
+    drawMay(G.caveX,G.caveY+CAVE_DRAW_OFFSET_Y,G.tick,G.facing||'down',false,true);
     // Cave HUD
     r(0,0,W,24,'rgba(0,0,0,0.7)');
     ctx.fillStyle=C.white;ctx.font='bold 13px monospace';
@@ -7435,7 +7468,7 @@ function loop(ts){
   else if(G.mode==='BOARDING'){
     drawCaveMap();
     drawKobe(G.caveKX,G.caveKY+CAVE_DRAW_OFFSET_Y,G.tick,G.facing||'down');
-    drawMay(G.caveX,G.caveY+CAVE_DRAW_OFFSET_Y,G.tick,G.facing||'down');
+    drawMay(G.caveX,G.caveY+CAVE_DRAW_OFFSET_Y,G.tick,G.facing||'down',false,true);
     const bl=BOARDING_LINES[Math.min(G.pickLine,BOARDING_LINES.length-1)];
     if(G.pickLine===2)drawWoof(G.caveKX+4,G.caveKY+CAVE_DRAW_OFFSET_Y);
     drawDialog([bl.tx],bl.sp);
@@ -7618,9 +7651,10 @@ function loop(ts){
 // Preload all portrait PNGs before starting the loop
 (function preloadPortraits(){
   var imgs=[
-    DIALOG_MAY_PORTRAIT,DIALOG_KOBE_PORTRAIT,DIALOG_GRANDMA_PORTRAIT,
+    DIALOG_KOBE_PORTRAIT,DIALOG_GRANDMA_PORTRAIT,
     DIALOG_GARY_PORTRAIT,DIALOG_SARDONNA_PORTRAIT,DIALOG_WING_PORTRAIT,
-    DIALOG_DAD_PORTRAIT,DIALOG_JO_PORTRAIT,CHARLIE_IMG,
+    DIALOG_DAD_PORTRAIT,DIALOG_JO_PORTRAIT,DIALOG_MAY_PORTRAIT,CHARLIE_IMG,
+    MAY_SPR_FRONT,MAY_SPR_BACK,MAY_SPR_LEFT,MAY_SPR_RIGHT,
     ...FISH_CATCH_IMGS,
   ];
   var loaded=0,started=false;
