@@ -1,2 +1,4 @@
 .DS_Store
 .claude/worktrees/
+.claude/
+.soundtrack.js
